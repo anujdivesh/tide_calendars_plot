@@ -1,0 +1,184 @@
+# MASTER_CALENDAR.dem -  Gnuplot command file
+ 
+# Sets up tidal calendar page then calls LOOP.dem to loop through days 
+# Requires variables pre-supplied by other gnuplot files
+# (eg TMP.dem -   port metadata at runtime)
+# (eg TYPE_cal1.dem - page element data for different calendar formats)
+#
+#
+# History
+# Feb2014:  First version  J.Chittleborough 
+# Aug2020:  Major revision for tidal realm.  J.Chittleborough 
+
+
+#Allow macros
+set macros
+
+#Size and type of page (inches)    
+set term postscript portrait enhanced size XPAGE,YPAGE font "Helvetica,9"
+set multiplot 
+
+
+#####Move to TYPE files
+##Page elements (in screen units)
+#TOP=1
+#BOTTOM=0
+#PHEAD=0.15
+#PBODY=0.805
+#PFOOT=0.045
+#if(TYPE eq "pslm" || TYPE eq "pslm_bw" || TYPE eq "pslm_bw_web" )
+#PHEAD=0.11
+#PBODY=0.785
+#PFOOT=0.105
+##Page margins (screen units)
+#LEFT=0.00
+#RIGHT=1.00
+#######################
+
+#Check of page element variables located in table type dem
+if(abs(1.0-(PHEAD+PBODY+PFOOT))>0.001)print "WARNING: COMBINED RELATIVE HEIGHT OF HEADER, FOOTER AND BODY DOES NOT EQUAL 1"
+
+#Adjust page element sizes in case (top - bottom) not equal to 1
+PHEAD=PHEAD*(TOP-BOTTOM)
+PBODY=PBODY*(TOP-BOTTOM)
+PFOOT=PFOOT*(TOP-BOTTOM)
+
+#Page elements (in screen units)
+NWEEKS=5
+YPANEL=PBODY/NWEEKS
+#Split YPANEL - prebox, hlwbox, bottom margin
+YPREBOX=PREBOX*YPANEL
+YHLWBOX=HLWBOX*YPANEL
+BMARGIN=YPANEL-YPREBOX-YHLWBOX
+#Dayloop
+XPANEL=(RIGHT-LEFT)/7
+
+#Size of whitespace around extreme high/low tide markers
+MARKUP=1.5
+
+#Margin control
+set lmargin 0
+set rmargin 0
+set bmargin 0
+set tmargin 0
+
+#Border line width
+BORDERSPEC="15 lt 1 lw 0.8"
+set border @BORDERSPEC
+
+#Colorscheme and color density options
+#Black/White (default)
+TAPCOL="black";PRECOL="black";HATCOL="black";LATCOL="black";LINCOL="black";COLFOOTNOTE="black"
+WETCOL="orange";DRYCOL="light-green";NITCOL="light-grey"
+PRECOLDEN="1.0";PREBOXDEN="1.0";TAPBOXDEN="1.0";LABELDEN1="1.0";LABELDEN2="1.0"
+if(COLOR == 0)\
+COLHEAD1="black" #overide
+#Grey scale (pacific b/w calendars) 
+#Bureau publications advice black and white 
+#Email of 27-May-2014,30/5/2014 MFoo
+if(COLOR == 1)\
+PRECOL="black";PREBOX="black";TAPBOX="black";LABBOX1="black";LABBOX2="black";HATCOL="black";LATCOL="black";LINCOL="black";COLFOOTNOTE="grey40" ;\
+PRECOLDEN="0.32";PREBOXDEN="0.05";TAPBOXDEN="0.05";LABELDEN1="0.32";LABELDEN2="0.1"
+#Standard Color (pacific calendars) 
+#Bureau publications advice color CMYK C87 M20 
+if(COLOR == 2)\
+PRECOL="#21CCFF";PREBOX="#21CCFF";TAPBOX="#21CCFF";LABBOX1="#21CCFF";LABBOX2="#21CCFF";HATCOL="black";LATCOL="black";LINCOL="black";COLFOOTNOTE="#21CCFF" ;\
+PRECOLDEN="0.8";PREBOXDEN="0.1";TAPBOXDEN="0.1";LABELDEN1="0.8";LABELDEN2="0.3"
+#Custom colorscheme
+if(COLOR == 3)load src.'/CUSTOM_CALENDAR.dem'
+
+#Debug overides
+if(COLOR >= 1 && STYLE eq "impulses")PRECOL="dark-blue";TAPBOX="#DCDCDC";PREBOX="light-blue"
+
+#Units
+if(!exists("UNITS"))UNITS="m"
+
+#Page Header                       
+#Header text position functions
+XPOS(XHEAD)=LEFT+XHEAD*(RIGHT-LEFT)
+YPOS(YHEAD)=TOP-PHEAD*(1-YHEAD)
+#Left-justified header (portname etc)                       
+set label 1 HEAD1 at screen XPOS(XHEAD1),YPOS(YHEAD1) left font FONTHEAD1 tc rgb COLHEAD1
+set label 2 HEAD2 at screen XPOS(XHEAD2),YPOS(YHEAD2) left font FONTHEAD2 
+set label 3 HEAD3 at screen XPOS(XHEAD3),YPOS(YHEAD3) left font FONTHEAD3
+set label 4 HEAD4 at screen XPOS(XHEAD4),YPOS(YHEAD4) left font FONTHEAD4
+#Right-justified header
+set label 6 HEADR1 at screen XPOS(XHEADR1),YPOS(YHEADR1) right font FONTHEADR1
+set label 7 HEADR2 at screen XPOS(XHEADR2),YPOS(YHEADR2) right font FONTHEADR2 tc rgb COLHEADR2
+#Block color elements in header
+if(TYPE eq "cal1" && COLOR > 0 ) \
+set object 2 rectangle behind from screen XPOS(-0.1),YPOS(0.72727) to screen XPOS(1.1),1.2 fc rgb LABBOX1 fs solid @LABELDEN1 noborder;\
+set object 3 rectangle behind from screen XPOS(-0.1),YPOS(0.45455) to screen XPOS(1.1),YPOS(0.72727) fc rgb LABBOX2 fs solid @LABELDEN2 noborder;\
+
+
+#Page Footer
+#Footer text position functions
+XPOS(XFOOT)=LEFT+XFOOT*(RIGHT-LEFT)
+YPOS(LINE)=BOTTOM+PFOOT-LINE*LINESPACE
+#Set left justified footers (copyright,disclaimer etc)
+set label 21 FOOTL1 at screen XPOS(XFOOTL1),YPOS(LINEFOOTL1) left font FONTFOOT
+set label 22 FOOTL2 at screen XPOS(XFOOTL2),YPOS(LINEFOOTL2) left font FONTFOOT
+set label 23 FOOTL3 at screen XPOS(XFOOTL3),YPOS(LINEFOOTL3) left font FONTFOOT
+set label 24 FOOTL4 at screen XPOS(XFOOTL4),YPOS(LINEFOOTL4) left font FONTFOOT
+set label 25 FOOTL5 at screen XPOS(XFOOTL5),YPOS(LINEFOOTL5) left font FONTFOOT
+set label 26 FOOTL6 at screen XPOS(XFOOTL6),YPOS(LINEFOOTL6) left font FONTFOOT
+#Set right justified footers
+set label 28 FOOTR1 at screen XPOS(XFOOTR1),YPOS(LINEFOOTR1) right font FONTFOOT
+set label 29 FOOTR2 at screen XPOS(XFOOTR2),YPOS(LINEFOOTR2) right font FONTFOOT
+
+#Footnotes
+#Footnote text position functions
+XPOS(XFOOTNOTE)=LEFT+XFOOTNOTE*(RIGHT-LEFT)
+YPOS(YFOOTNOTE)=BOTTOM+YFOOTNOTE
+#Set footnotes (datum, imperial scale, turn page)
+set label 31 FOOTNOTE1 at screen XPOS(XFOOTNOTE1),YPOS(YFOOTNOTE1) left font FONTFOOTNOTE tc rgb COLFOOTNOTE
+set label 32 FOOTNOTE2 at screen XPOS(XFOOTNOTE2),YPOS(YFOOTNOTE2) left font FONTFOOTNOTE tc rgb COLFOOTNOTE
+set label 33 FOOTNOTE3 at screen XPOS(XFOOTNOTE3),YPOS(YFOOTNOTE3) left font FONTFOOTNOTE tc rgb COLFOOTNOTE
+
+#Day labels
+set label 11 "SUNDAY" at screen LEFT+(1-0.5)*XPANEL,(PFOOT+PBODY+0.01) center font "Helvetica-Bold,9"
+set label 12 "MONDAY" at screen LEFT+(2-0.5)*XPANEL,(PFOOT+PBODY+0.01) center font "Helvetica-Bold,9"
+set label 13 "TUESDAY" at screen LEFT+(3-0.5)*XPANEL,(PFOOT+PBODY+0.01) center font "Helvetica-Bold,9"
+set label 14 "WEDNESDAY" at screen LEFT+(4-0.5)*XPANEL,(PFOOT+PBODY+0.01) center font "Helvetica-Bold,9"
+set label 15 "THURSDAY" at screen LEFT+(5-0.5)*XPANEL,(PFOOT+PBODY+0.01) center font "Helvetica-Bold,9"
+set label 16 "FRIDAY" at screen LEFT+(6-0.5)*XPANEL,(PFOOT+PBODY+0.01) center font "Helvetica-Bold,9"
+set label 17 "SATURDAY" at screen LEFT+(7-0.5)*XPANEL,(PFOOT+PBODY+0.01) center font "Helvetica-Bold,9"
+
+#Inititialise the key count 
+KEYCOUNT=0
+
+#Some calculations just in case FLOATKEY=1
+#First find position of day1 (0-6)
+WEEKDAY1=system("date +%w -d".YEAR."-".MONTH."-1")
+if(WEEKDAY1 < 3)KEYROW=5;KEYDAY=5; \
+else if(WEEKDAY1 < 5)KEYROW=1;KEYDAY=0; \
+else if(WEEKDAY1 < 6)KEYROW=1;KEYDAY=2; \
+else KEYROW=1;KEYDAY=3
+if(WEEKDAY1 == 0 && NDAYS == 28)KEYDAY=0
+#Set float key origin (top left)
+KEYLEFT=LEFT+XPANEL*(KEYDAY)
+KEYTOP=(PFOOT+PBODY)-(KEYROW-1)*YPANEL
+#Number of key entries
+NKEYS=(EXTREME*2)+SUNSET
+if(exists("WET"))NKEYS=NKEYS+1
+if(exists("DRY"))NKEYS=NKEYS+1
+
+#Data format 
+set timefmt @TIMEFMT
+set datafile separator @SEPARATOR
+set datafile missing @MISSING
+set xdata time
+set x2data time
+
+#Style of plot (eg impulses, filledcurves)
+set style data @STYLE 
+
+#Set grid
+GRIDSPEC="xtics ytics front lt 1 lw 0.2"
+set grid @GRIDSPEC
+
+#Now load the day loop
+DAY=1
+load src.'/DAYLOOP_cal.dem'
+
+reset

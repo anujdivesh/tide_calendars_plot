@@ -1,0 +1,98 @@
+# TYPE_cal1.dem -  Gnuplot page variables for tide calendar type
+# Description: pacific calendar
+ 
+#Page size (inches)    
+XPAGE=7
+YPAGE=10.25
+
+##Page elements (in screen units)
+TOP=1
+BOTTOM=0
+PHEAD=0.11
+PBODY=0.785
+PFOOT=0.105
+#Page margins (screen units)
+LEFT=0.00
+RIGHT=1.00
+
+#Percentage of pre box and hlw box for each row (remainder is bottom margin)
+PREBOX=0.55
+HLWBOX=0.3
+ 
+#Header text
+HEAD1=LABEL1
+HEAD2=LABEL2
+HEAD3=LABEL3
+HEAD4=""
+HEADR1=LABEL5
+
+#Header text positioning
+XHEAD1=0.0
+XHEAD2=0.0
+XHEAD3=0.22
+XHEAD4=0.0
+XHEADR1=1.0
+YHEAD1=0.95455
+YHEAD2=0.59091
+YHEAD3=0.59091
+YHEAD4=0.59091
+YHEADR1=0.59091
+FONTHEAD1="Helvetica-Bold,14"
+FONTHEAD2="Helvetica-Bold,12"
+FONTHEAD3="Helvetica-Bold,10"
+FONTHEAD4="Helvetica-Bold,10"
+FONTHEADR1="Helvetica,8"
+COLHEAD1="white"
+
+#Footer text
+THISYEAR=`date +%Y` 
+FOOTL1="Commonwealth of Australia ".THISYEAR.", Bureau of Meteorology" 
+FOOTL2="These tide predictions are supplied in good faith and are"
+FOOTL3="believed to be correct. They are not necessarily related to"
+FOOTL4="a local hydrographic chart datum."
+FOOTL5="No warranty is given in respect to errors, omissions, or"
+FOOTL6="suitability for any purpose."
+FOOTR1="{/Symbol \343} {/Helvetica-Bold Copyright:} "
+FOOTR2="{/Helvetica-Bold Disclaimer:} "
+
+#Footer text positiong
+LINESPACE=0.012
+FONTFOOT="Helvetica,6.5"
+XFOOTL1=0.67
+XFOOTL2=0.67
+XFOOTL3=0.67
+XFOOTL4=0.67
+XFOOTL5=0.67
+XFOOTL6=0.67
+LINEFOOTL1=2
+LINEFOOTL2=3.5
+LINEFOOTL3=4.5
+LINEFOOTL4=5.5
+LINEFOOTL5=7.0
+LINEFOOTL6=8.0
+XFOOTR1=0.67
+XFOOTR2=0.67
+LINEFOOTR1=2
+LINEFOOTR2=3.5
+
+#Footnote text 
+FOOTNOTE1=LABEL4
+FOOTNOTE2=""
+FOOTNOTE3=""
+if(ADDIMPERIAL == 1)FOOTNOTE2="1m = 3.28ft   1ft = 0.305m"
+if(UNITS eq "ft")FOOTNOTE2="Heights in feet"
+if(ORDERPAGES == 1 && MONTH == 6)FOOTNOTE3="Please turn page over for July"
+
+#Footnote text positioning
+FONTFOOTNOTE="Helvetica,8"
+XFOOTNOTE1=0.0
+YFOOTNOTE1=-0.036
+XFOOTNOTE2=0.0
+YFOOTNOTE2=-0.02
+XFOOTNOTE3=0.67
+YFOOTNOTE3=-0.036
+
+#Key position
+KEYLINESPACE=0.02
+#KEYPOSITION="screen (LEFT-0.02)+int(KEYCOUNT/5)*0.3,(PFOOT-0.01)-(int(KEYCOUNT/5)+KEYCOUNT)%5*KEYLINESPACE left center reverse vertical spacing 1.5 samplen 2 height 0 Left"
+KEYPOSITION="screen (LEFT-0.02)+int(KEYCOUNT/6)*0.3,(PFOOT-0.01)-(int(KEYCOUNT/6)+KEYCOUNT)%6*KEYLINESPACE left center reverse vertical spacing 1.5 samplen 2 height 0 Left"

@@ -1,0 +1,29 @@
+Application subsystem for plotting tide calendars with gnuplot  
+
+Development Environment: 
+(ntcm.bom.gov.au) /home/james/bin/utilities/tidecalendars2
+
+Porting script:
+(ntcm.bom.gov.au) /home/james/bin/utilities/tidecalendars2/dev2ops.scr
+
+Manual:
+Edit word document (/home/james/bin/utilities/tidecalendars2/doc) and make pdf
+Make examples with cookbook.ksh then concatentate ps and ps2pdf
+Use adobe acrobat to insert/replace examples into manual
+
+Operational Environment:
+/g/ns/ntc/op/dm/bin/tidecalendars2
+Shared storage for use by all virtual servers
+
+NOTE:
+Do not edit the operational environment unless you really need to.
+Make changes in the development environment, and then port across
+
+Main executable:
+(Symbolic link) /g/ns/ntc/op/dm/bin/tide_calendar2
+
+For help:
+tide_calendar2 -h
+
+James Chittleborough  Sep 2020 (tide_calendar)
+

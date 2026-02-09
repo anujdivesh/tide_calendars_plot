@@ -1,0 +1,17 @@
+#gnuplot variables for customised calendar
+
+#Custom colorscheme (For options google "gnuplot colors" or type "show colornames" when in gnuplot)
+PRECOL="skyblue"
+LABCOL="skyblue"
+PREBOX="light-cyan"
+TAPCOL="black"
+TAPBOX="light-cyan"
+WETCOL="light-blue"
+WETCOL="orange"
+DRYCOL="light-goldenrod"
+DRYCOL="light-green"
+HATCOL="light-red"
+LATCOL="royalblue"
+LINCOL="black"
+NITCOL="light-grey"
+LABBOX1="skyblue";LABBOX2="light-cyan"

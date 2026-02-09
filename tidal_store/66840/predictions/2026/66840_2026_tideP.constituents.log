@@ -1,0 +1,2 @@
+umask 002
+/g/ns/ntc/op/dm/bin/t1_dev.ksh  -s /g/ns/ntc/op/dm/tidal_store/66840/predictions/2026/66840_2026_tideP  -M 66840    -A /g/ns/ntc/op/dm/tidal_store/66840/analysis/2024/66840_2024_tideA.utc -t 2.7/2026 -D pre,0,tgz,"TGZ" -z "UTC+13:00" -B /g/ns/ntc/op/dm/tidal_store/66840/analysis/2024/66840_2024_trend.utc   

@@ -1,0 +1,2 @@
+umask 002
+/g/ns/ntc/op/dm/bin/t1_dev.ksh  -s /g/ns/ntc/op/dm/tidal_store/66840/predictions/2026/66840_2026_interim60  -M 66840      -P /g/ns/ntc/op/dm/tidal_store/66840/predictions/2026/66840_2026_tideP.con -p 2026-01-01T00:00:00+13:00/2028-12-31T23:59:59+13:00/60  -W 

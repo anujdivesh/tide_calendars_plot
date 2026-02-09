@@ -1,0 +1,897 @@
+#!/bin/ksh
+
+# tide_calendar2
+
+# Description: Script to make tide calendar using GNUPLOT
+
+#TO DO - check tide_calendar2 and tide_table2 rounding to minute value conforms with xml files on tidesportal
+
+# History
+# Feb 2014 - First version was tide_calendar.			J.Chittleborough
+# Jul 2020 - Re-arranged for tide_realm and tide_register. 	J.Chittleborough
+# Sep 2023 - Added option to specify input store.          	J.Chittleborough
+# Jan 2025 - Re-arranged for tidal_store                    	J.Chittleborough
+# Jul 2025 - Added option to convert input data to feet        	J.Chittleborough
+
+#------------------------------------------------------------------------------------------------
+#FUNCTIONS
+#------------------------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------------------------
+#Usage Function
+usage()
+{
+  echo >&2 ""
+  echo >&2 "Usage: $(basename $0) [Options] <year> <antt_list>"
+  echo >&2 ""
+  echo >&2 "year is the required year of predictions"
+  echo >&2 "<antt_list> is a list of antt numbers"
+  echo >&2 ""
+  echo >&2 "Options:"
+  echo >&2 " -t <type>      Specify tide calendar type (see Calendar types below)" 
+  echo >&2 " -p <preset>    Specify preset type and options (see Presets below)" 
+  echo >&2 " -z <zone>      Specify times in loc (local), dst (daylight saving) or utc (UTC) timezones (default is $ztype)"
+  echo >&2 " -m \"<list>\"	Create calendars only for those months given in list"
+  echo >&2 " -f             Use filledcurves (default is impulses)"
+  echo >&2 " -l             Trace the tide curve with a line"
+  echo >&2 " -x             Mark lowest/highest tides for the month/year"
+  echo >&2 "                (use -X to also place mark adjacent tide times)"
+  echo >&2 " -b             Put a white border around the markers"
+  echo >&2 " -w <wet>       Highlight tides above given wetting height"
+  echo >&2 " -d <dry>       Highlight tides below given drying height"
+  echo >&2 "                (use -W or -D to also highlight tide times)"
+  echo >&2 " -c <scheme>    Specify colorscheme as 0 (black/white), 1 (grey-scale), 2 (standard) or 3 (custom) (Default is 0)"
+  echo >&2 " -e             Edit custom gnuplot colorscheme"
+  echo >&2 " -s             Shade period between sunset and sunrise"
+  echo >&2 " -F             Float the key (default is place key in footer)"
+  echo >&2 " -I <facet>     Allow for Imperial measurement systems by way of a specific tide calendar facet;"
+  echo >&2 "                 units (converts units from metres to feet)"
+  echo >&2 "                 scale (retains units as metres, but adds a secondary scale in feet)"
+  echo >&2 " -O             Order pages for double-sided top-bound calendar"
+  echo >&2 "                (and place a please turn over message on june)"
+  echo >&2 " -k             Keep temporary data files (default is delete)"
+  echo >&2 " -i <dir>       Specify the input store (default collects file from $tidal_store)"
+  echo >&2 " -o <dir>       Specify the output directory (default puts calendar in the tidal store)"
+  echo >&2 " -M             Create individual monthly pdf files"
+  echo >&2 " -h             Command line help"
+  echo >&2 " -H             Display manual"
+  echo >&2 ""
+  echo >&2 "Calendar types:"
+  echo >&2 "  cal1          contemporary (default)"
+  echo >&2 "  cal2          classic"
+  echo >&2 ""
+  echo >&2 "Presets:"
+  echo >&2 "  pslm          calendars for PSLGM project"
+  
+  echo >&2 ""
+  echo >&2 "Examples:"
+  #echo >&2 " `basename $0` -p pslm_bw"
+  #echo >&2 "                Create PSLM-type calendars for pac stations for next year"
+  #echo >&2 " `basename $0` -t pslm_web 2014 nsw fd"
+  #echo >&2 "                Create PSLM-type calendar for Fort Denison,NSW for 2014"
+  #echo >&2 " `basename $0` -a 2012 vic"
+  #echo >&2 "                Create pdfs of 2012 VIC calendars"
+  #echo >&2 " `basename $0` -t c -m \"01 02 03\"  2013 nsw"
+  #echo >&2 "                Create classic-type NSW calendars, for Jan,Feb,Mar 2013"
+  exit 1
+}
+
+#------------------------------------------------------------------------------------------------
+#Function to get values from tide register
+call_tide_register(){
+ #get_registration $ANTT
+ #check is_registered
+ #if [[ -n $is_registered ]] then
+  site_name="APIA"
+  site_altname="SAMOA, UPOLU ISLAND - APIA"
+  state_name=""
+  country_name="Samoa"
+  classification_type="Secondary"
+  classification_networks="PSLM JASL_401b"
+  coordinates_latitude="-13.826698"
+  coordinates_longitude="-171.761277"
+  timezone_name="Pacific/Apia"
+  timezone_utc_offset="UTC+13:00"
+  prediction_datum_name="TGZ"
+  analysis_flags="Z0trend qcs db2bef"
+  echo "..registered under site name=$site_name"
+ #else
+ # echo "..STOP: ANTT=$ANTT IS NOT REGISTERED IN THE TIDE REGISTER"
+ # exit
+ #fi
+ #issue warnings
+ for item in timezone_name timezone_utc_offset
+ do
+  nameref myitem=$item
+  if [[ -z $myitem ]] then
+   echo "..WARNING -  no $item registered in the tide register"
+   case $item:$ztype in
+    timezone_name:dst)echo "..STOP: Daylight savings calendar requires timezone_name";exit;;
+    timezone_utc_offset:loc)echo "..STOP: Local Standard time calendar requires timezone_utc_offset";exit;;
+   esac
+  fi
+ done
+}
+
+#------------------------------------------------------------------------------------------------
+#Function to get a registration listing from the tide register
+#Also sets is_registered to the antt.code
+get_registration(){
+ registration=$(${tide_register} -l $1)
+ is_registered=$(getval registration antt.code)
+}
+
+#------------------------------------------------------------------------------------------------
+#Function to get value from registration listing
+getval(){
+ nameref mylist=$1
+ myobj=$2
+ echo "$mylist" | grep "$myobj" |cut -d'=' -f2-
+}
+
+
+#--------------------------------------------------------------------------
+#Retrieve value attached to an option in a target string or file
+#(wont succeed for values that contain spaces)
+get_option_value()
+{
+ option=$1;target="$2"
+ if [[ -s $target ]] then
+  cat $target |awk -v flag=$option '{for(i=1;i<=NF;i++)if(substr($i,1,length(flag))==flag)print substr($i,length(flag)+1)}'
+ else
+  echo "$target"|awk -v flag=$option '{for(i=1;i<=NF;i++)if(substr($i,1,length(flag))==flag)print substr($i,length(flag)+1)}'
+ fi
+}
+
+#--------------------------------------------------------------------------
+#Retrieve an option or tide_register flag from a string or a log file
+get_option()
+{
+ option=$1;target="$2"
+ if [[ -s $target ]] then
+  cat $target|awk -v flag=$option '{for(i=1;i<=NF;i++){if(substr($i,1,length(flag))==flag)print $i;if(substr($i,2,length(flag))==flag){i1=index($0,$i);i2=index(substr($0,i1+1),"\"")+1;print substr($0,i1,i2)}}}'
+ else
+  echo "$target"|awk -v flag=$option '{for(i=1;i<=NF;i++){if(substr($i,1,length(flag))==flag)print $i;if(substr($i,2,length(flag))==flag){i1=index($0,$i);i2=index(substr($0,i1+1),"\"")+1;print substr($0,i1,i2)}}}'
+ fi
+}
+
+
+#--------------------------------------------------------------------------
+#Locate an existing t2 file in the tidal realm
+locate_t2_file()
+{
+ myantt=$1;mymode=$2;mytype=$3;myextension=$4;myyear=$5
+ #fix for tidal stream, until we adjust the call to locate_t2_file
+ if [[ $classification_type == "TidalStream" ]] then
+  case $myextension in
+   con|sol)myextension=n$myextension #north component
+  esac
+ fi
+ case $myyear in
+  ????) (ls -1 ${input_store}/${myantt}/${mymode}/${myyear}/${myantt}_${myyear}_${mytype}.${myextension}|tail -n1) 2>/dev/null;;
+  miscellaneous) (ls -1 ${input_store}/${myantt}/${mymode}/${myyear}/${myantt}_${mytype}.${myextension}|tail -n1) 2>/dev/null;;
+  *-*) (ls -1 ${input_store}/${myantt}/${mymode}/????/${myantt}_????_${mytype}.${myextension}|awk -F/ -v max=${myyear#*-} '$(NF-1)<=max'|tail -n1) 2>/dev/null;;
+  "") (ls -1 ${input_store}/${myantt}/${mymode}/????/${myantt}_????_${mytype}.${myextension}|tail -n1) 2>/dev/null;;
+ esac
+}
+
+#------------------------------------------------------------------------------------------------
+#Function to edit gnuplot metadata
+edit_meta()
+{
+  metadata=${src}/CUSTOM_CALENDAR.dem
+  vi ${metadata}
+  exit 1
+}
+
+#------------------------------------------------------------------------------------------------
+#Function to set hemisphere from quadrant 
+set_hemisphere(){
+ quadrant=$1
+ case $quadrant in
+  1) LATHEM=N;LONHEM=E ;;
+  2) LATHEM=N;LONHEM=W ;;
+  3) LATHEM=S;LONHEM=W ;;
+  4) LATHEM=S;LONHEM=E ;;
+ esac
+}
+
+#------------------------------------------------------------------------------------------------
+#Function to establish latitude and longitude in deg min secs
+convert_latlon(){
+ LATDEC=$1;LONDEC=$2
+ #..convert decimal coordinates into degrees and minutes
+ LATDEG=$(echo $LATDEC | awk '{$1<0?lat=-$1+0:lat=$1+0;printf "%d", int(lat)}' -)
+ LATMIN=$(echo $LATDEC | awk '{$1<0?lat=-$1+0:lat=$1+0;printf "%02d", (lat%1)*60.0}' -)
+ LONDEG=$(echo $LONDEC | awk '{$1<0?lon=-$1+0:lon=$1+0;printf "%d", int(lon)}' -)
+ LONMIN=$(echo $LONDEC | awk '{$1<0?lon=-$1+0:lon=$1+0;printf "%02d", (lon%1)*60.0}' -)
+ if [[ $LATMIN == 60 ]] then; LATDEG=$(expr $LATDEG + 1);LATMIN=00;fi
+ if [[ $LONMIN == 60 ]] then; LONDEG=$(expr $LONDEG + 1);LONMIN=00;fi
+ #..establish hemisphere
+ if [[ $LATDEC -lt 0 ]] then; LATHEM=S; else; LATHEM=N; fi
+ if [[ $LONDEC -lt 0 || $LONDEC -gt 180 ]] then; LONHEM=W; else; LONHEM=E; fi
+}
+
+#--------------------------------------------------------------------------
+#function to rewrite hlw file to gnu format
+#TO DO - need to adjust print format as per hlw2gnux
+hlw2gnu(){
+ ifile=$1;ofile=$2
+ awk -v format="${TIMEFMT}" -F[T,] '$0!~/#/{
+  if($1!=date)seq=0;seq+=1;date=$1
+  instance=$4;height=sprintf("%.2f",$3)
+  y=substr($1,1,4);m=substr($1,6,2);d=substr($1,9,2);h=substr($2,1,2);mn=substr($2,4,2)
+  printf "%s,%s,%s,%2s%2s %6s\n",strftime(format,mktime(y" "m" "d" 00 00 00")),instance,seq,h,mn,height}' $ifile
+}
+
+#--------------------------------------------------------------------------
+#function to rewrite hlw file to gnu format, flagging extremes on second pass                
+#also adjusts print format for heights>10 m (to align helvetica font)
+hlw2gnux(){
+ ifile=$1
+ awk -v format="${TIMEFMT}" -v convf=$CONVF -F[,] '$0!~/#/{
+  y=substr($1,1,4);m=substr($1,6,2);d=substr($1,9,2);h=substr($1,12,2);mn=substr($1,15,2)
+  ym=y""m;instance=$3;height=$2*convf
+  if(NR==FNR){
+   if(!(ym in max)||height>max[ym])max[ym]=height
+   if(!(ym in min)||height<min[ym])min[ym]=height
+   if(!(y in max)||height>max[y])max[y]=height
+   if(!(y in min)||height<min[y])min[y]=height
+  }
+  if(NR!=FNR){
+   if(substr($1,1,10)!=date)seq=0
+   seq+=1;date=substr($1,1,10);flag=""
+   if(height==max[ym])flag="+"
+   if(height==min[ym])flag="-"
+   if(height==max[y])flag="++"
+   if(height==min[y])flag="--"
+   ph=sprintf("%.2f",height)+0
+   if(ph<10)fmt="%s,%s,%s,%2s%2s %6.2f,%s\n";else fmt="%s,%s,%s,%2s%2s %5.2f,%s\n"
+   printf fmt,strftime(format,mktime(y" "m" "d" 00 00 00")),instance,seq,h,mn,height,flag 
+  }
+ }' $ifile $ifile
+}
+
+#--------------------------------------------------------------------------
+#function to rewrite hlw file to gnu format, flagging extremes listed in monthly highest (mth_hi) and monthly lowest (mth_lo) tides files
+#also adjusts print format for heights>10 m (to align helvetica font)
+hlw2gnux2(){
+ mth_hi_data=$1;mth_lo_data=$2;hlwdata=$3
+ awk -v format="${TIMEFMT}" -v convf=$CONVF -F, -v ymax=-999 -v ymin=999 '$0!~/#/{
+  #parse file1 monthly highest data
+  if(FILENAME==ARGV[1]){
+   y=substr($1,1,4);m=substr($1,6,2);ym=y""m
+   maxtime=$1;maxht=$2*convf
+   #store dates
+   max[ym]=maxtime
+   if(maxht>ymax || !(y in max)){max[y]=maxtime;ymax=maxht}
+  }
+  #parse file2 monthly lowest data
+  if(FILENAME==ARGV[2]){
+   y=substr($1,1,4);m=substr($1,6,2);ym=y""m
+   mintime=$1;minht=$2*convf
+   #store dates
+   min[ym]=mintime
+   if(minht<ymin || !(y in min)){min[y]=mintime;ymin=minht}
+  }
+  if(FILENAME==ARGV[3]){
+   y=substr($1,1,4);m=substr($1,6,2);d=substr($1,9,2);h=substr($1,12,2);mn=substr($1,15,2)
+   ym=y""m
+   datetime=$1;height=$2;instance=$3;height=$2*convf
+   if(substr(datetime,1,10)!=date)seq=0
+   seq+=1;date=substr(datetime,1,10);flag=""
+   if(datetime==max[ym])flag="+"
+   if(datetime==min[ym])flag="-"
+   if(datetime==max[y])flag="++"
+   if(datetime==min[y])flag="--"
+   ph=sprintf("%.2f",height)+0
+   if(ph<10)fmt="%s,%s,%s,%2s%2s %6.2f,%s\n";else fmt="%s,%s,%s,%2s%2s %5.2f,%s\n"
+   printf fmt,strftime(format,mktime(y" "m" "d" 00 00 00")),instance,seq,h,mn,height,flag 
+  }
+ }' $mth_hi_data $mth_lo_data $hlwdata
+}
+
+#--------------------------------------------------------------------------
+#function to rewrite pre file to gnu format
+pre2gnu(){
+ ifile=$1
+ awk -v format="${TIMEFMT}" -v convf=$CONVF -F[T,] '$0!~/#/{
+  y=substr($1,1,4);m=substr($1,6,2);d=substr($1,9,2);h=substr($2,1,2);mn=substr($2,4,2)
+  printf "%s,%s\n",strftime(format,mktime(y" "m" "d" "h" "mn" 00")),$3*convf
+ }' $ifile
+}
+
+#--------------------------------------------------------------------------
+#function to rewrite moon phase data to gnu format
+moon2gnu(){
+ ifile=$1
+ awk -v format="${TIMEFMT}" -F[T,] '$0!~/#/{
+  y=substr($1,1,4);m=substr($1,6,2);d=substr($1,9,2);h=substr($2,1,2);mn=substr($2,4,2)
+  printf "%s,%s\n",strftime(format,mktime(y" "m" "d" 00 00 00")),$3
+ }' $ifile
+}
+
+#--------------------------------------------------------------------------
+#function to rewrite extra tides to gnu format
+#checks if a moon phase coincides on same day    
+ext2gnu(){
+ efile=$1;mfile=$2
+ awk -v format="${TIMEFMT}" -F[T,] '$0!~/#/{
+  if(NR==FNR){a[$1]=1}
+  if(NR!=FNR){
+   y=substr($1,1,4);m=substr($1,6,2);d=substr($1,9,2)
+   moon=($1 in a)?1:0
+   printf "%s,%s\n",strftime(format,mktime(y" "m" "d" 00 00 00")),moon
+  }
+ }' $mfile $efile |uniq
+}
+
+#--------------------------------------------------------------------------
+#function to detect timezone changeovers and write in gnu format
+tz2gnu(){
+ ifile=$1;ofile=$2
+ awk -v format="${TIMEFMT}" -F[T,] '$0!~/#/{
+  y=substr($1,1,4);m=substr($1,6,2);d=substr($1,9,2);h=substr($2,1,2);mn=substr($2,4,2)
+  tz2=substr($2,9)
+  if(tz1 && tz2!=tz1)printf "%s,%s,%s\n",strftime(format,mktime(y" "m" "d" 00 00 00")),tz1,tz2
+  tz1=tz2
+ }' $ifile
+}
+
+#--------------------------------------------------------------------------
+#Function to match a substring in a string
+match_substr(){
+ echo "$2"|grep "$1"
+}
+
+#------------------------------------------------------------------------------------------------
+#Function to match a whole word in a string
+match_word(){
+ echo "$2"|grep -w "$1"
+}
+
+#--------------------------------------------------------------------------
+#function to check valid timezone
+check_timezone()
+{
+ echo "..checking timezone name $timezone_name"
+ zonedir=/usr/share/zoneinfo
+ if [[ ! -s $zonedir/${timezone_name} ]] then
+  echo "  ERROR! TIMEZONE NAME - $timezone_name - NOT RECOGNISED"
+  exit
+ fi
+ echo "..checking currency of tzdata package"
+ tzdata_build=$(rpm -q --queryformat="%{BUILDTIME}\n" tzdata) #secs since epoch
+ now=$(date '+%s')
+ (( tzdata_age_years = (now - tzdata_build)/3600/24/365.25 ))
+ if (( tzdata_age_years > 1 )) then
+  echo "  WARNING tzdata package was built ${tzdata_age_years} years ago"
+  echo "  ..to investigate further you can issue the following commands"
+  echo "    rpm -qi tzdata #To query package details"
+  echo "    rpm -q --changelog tzdata #To query package changelog"
+ fi
+}
+
+#--------------------------------------------------------------------------
+#Cleanup temporary files
+cleanup()
+{
+ if [[ ${keeptmp} -eq 0 ]] then
+  rm -f -R ${tmp}
+ else
+  echo
+  echo "The temporary files have been kept in ${tmp}"
+  echo " (delete when no longer required)"
+  echo
+ fi
+}
+
+#--------------------------------------------------------------------------
+#Make a clean exit
+clean_exit()
+{
+ cleanup;exit
+}
+
+
+#------------------------------------------------------------------------------------------------
+#START OF PROGRAM
+#------------------------------------------------------------------------------------------------
+
+#------------------------------------------------------------------
+#INITIAL SETUP       
+#------------------------------------------------------------------
+
+#Set permissions
+umask 002
+
+#Operate in UTC to avoid daylight savings issues with mktime
+TZ=UTC
+export TZ
+
+#Establish name of program
+program=$(basename $0)
+
+#Establish if dev or ops
+ops=1
+if [[ $(match_substr dev $program) ]] then;ops=0;fi
+
+#Global bin
+bin=/g/ns/ntc/op/dm/bin
+
+#Set application directories
+case $ops in
+ 0) #development
+  app=/home/divesha/gnu26/spc_tide_calendar_transition/tidecalendars2
+  tide_register=${bin}/tide_register
+  tide_realm=/home/james/bin/utilities/tiderealm/tide_realm_dev
+  tidal_store=/home/divesha/gnu26/spc_tide_calendar_transition/tidal_store
+  utils=/home/james/apps/t1/utils
+ ;;
+ 1) #operations
+  app=${bin}/tidecalendars2
+  tide_register=${bin}/tide_register
+  tide_realm=${bin}/tide_realm
+  tidal_store=/home/divesha/gnu26/spc_tide_calendar_transition/tidal_store
+  utils=${bin}/t1/utils
+ ;;
+esac
+src=${app}/src
+etc=${app}/etc
+
+#Set tidal realm repository and associated etc
+tidal_realm=/g/ns/ntc/op/dm/tidal_realm
+tidal_store_etc=/home/divesha/gnu26/spc_tide_calendar_transition/tidal_store/
+
+#Set default options
+input_store=$tidal_store;ztype=loc; COLOR=0; keeptmp=0; USETMP=0; STATE=pac;ONTAP=0;EXTREME=0; EXTREMEHLW=0; WHITEBORDER=0; SUNSET=0; TRACE=0; FLOATKEY=0; ORDERPAGES=0; IMPERIAL=0; CONVF=1.0;UNITS=m
+STYLE="impulses"
+MONTHLYPDF=0
+
+#List of months
+MONTHS="01 02 03 04 05 06 07 08 09 10 11 12"
+
+#Settle on a timeformat to use for all data
+#(Check DATESANSDAY not affected by any change in LOOP.dem)
+TIMEFMT="%d/%m/%Y %H:%M"
+
+#Default calendar type
+caltype="cal1"
+
+
+#Pull command line options  
+while getopts ":t:p:z:am:flxXec:bw:d:W:D:sFI:Oki:o:MhH" option;
+do
+  case $option in
+   t)  caltype=$OPTARG;;
+   p)  preset=$OPTARG;;
+   z)  ztype=$OPTARG;;
+   a)  USE_ALTNAME=1;;
+   m)  MONTHS=$OPTARG;;
+   f)  STYLE="filledcurves x1";;
+   l)  TRACE=1;;
+   x)  EXTREME=1;;
+   X)  EXTREME=1;EXTREMEHLW=1;;
+   e)  edit_meta;;
+   c)  COLOR=${OPTARG};;
+   b)  WHITEBORDER=1;;
+   w)  WET=${OPTARG};;
+   d)  DRY=${OPTARG};;
+   W)  WET=${OPTARG};ONTAP=1;;
+   D)  DRY=${OPTARG};ONTAP=1;;
+   s)  SUNSET=1;;
+   F)  FLOATKEY=1;;
+   I)  facet=${OPTARG};;
+   O)  ORDERPAGES=1;;
+   k)  keeptmp=1;;
+   i)  input_store=$OPTARG;;
+   o)  PDFSET=$OPTARG;;
+   M)  MONTHLYPDF=1;;
+   h)  usage;;
+   H)  evince ${app}/doc/tide_calendar2_manual.pdf&;exit;;
+   *)  usage;;
+  esac
+done
+shift `expr $OPTIND - 1`
+
+#Now get the residual command arguments: year,antt_list
+if [[ -n $1 ]] then; YEAR=$1; else; usage; fi
+if [[ -n $2 ]] then; shift 1; antt_list=$@; else; usage; fi
+
+#Check command line options
+case $facet in 
+ scale)IMPERIAL=1;;  	#adds imperial scale
+ units)CONVF=3.28084;UNITS=ft;; #converts units from m to feet
+esac
+
+#Check preset
+case $preset in
+ pslm)
+  echo setting preset options for $preset
+  caltype=cal1;COLOR=1;STYLE="filledcurves x1";EXTREME=1;EXTREMEHLW=1;WHITEBORDER=1
+ ;;
+esac
+
+#Check calendar type exists
+if [[ ! -s ${src}/TYPE_${caltype}.dem ]] then
+  echo 
+  echo "STOP: Type ${caltype} tide calendar format does not exist"
+  exit
+fi
+
+#Transform list of user months into i2 format
+MONTHS=$(printf "%02i " $MONTHS)
+
+#Order the pages
+if [[ $ORDERPAGES -eq 1 ]] then
+MONTHS="01 12 02 11 03 10 04 09 05 08 06 07"
+fi
+
+#Temporary Data Directories
+tmp=$(mktemp -d -p./)
+
+#Create directories (and parents) if required (so script doesn't tumble)
+for dir in $tmp
+do
+  mkdir -p $dir
+done
+
+#Station Loop
+for ANTT in ${antt_list}
+do
+
+  #Extract metadata                     
+  echo ""
+  echo "Metadata collection for $ANTT"
+  echo "---------------------------------"
+  echo "..extracting metadata from tide register"
+  call_tide_register
+
+  #Check metadata
+  
+  check_timezone
+  if [[ $USE_ALTNAME == 1 && -z $site_altname ]] then
+   USE_ALTNAME=0
+   echo "..no altname registered, reverting to using usual name"
+  fi
+
+  #Assign tide_table variables
+  NAME=$(echo "$site_name"|  tr "[:lower:]" "[:upper:]" )
+  STATENAME=$(echo "$state_name" |  tr "[:lower:]" "[:upper:]")
+  ALTNAME=$(echo "$site_altname" |  tr "[:lower:]" "[:upper:]")
+  if [[  $USE_ALTNAME == 1 ]] then
+   NAME=$ALTNAME
+  fi
+  PSFLAG=$(echo "$classification_type" | cut -c1|tr "[:lower:]" "[:upper:]")
+  DATUM=$prediction_datum_name
+  #convert decimal coordinates to degrees minutes
+  convert_latlon $coordinates_latitude $coordinates_longitude
+  #check hemisphere (for moon phase appearance)
+  if (( $coordinates_latitude > 0 )) then; HEMI=N;else HEMI=S;fi
+  #..set copyright for 3rd party tide predictions
+  THIRDPARTY=""
+  if [[ $ANTT == 02500 ]] then
+   THIRDPARTY="Predictions for The Rip computed by Cardno Pty Ltd"
+  fi
+  #..set datum string
+  case $DATUM in
+   LAT*)DATUM="Lowest Astronomical Tide";;
+   CD) DATUM="Chart Datum";;
+   TGZ*)DATUM="Tide Gauge Zero";;
+  esac
+
+  #Establish label for units
+  case $UNITS in
+    m)UNITSLABEL="Heights in metres";;
+    ft)UNITSLABEL="Heights in feet";;
+  esac
+
+  #Establish UTC offset during daylight savings time
+  timezone_utc_offset_dst=$(zdump -v -c $YEAR,$(( YEAR + 1 )) $timezone_name|awk -F= '$0~/isdst=1/{printf "UTC%+03d:%02d", $NF/3600%24,$NF/60%60;exit}')
+  hasdst=${timezone_utc_offset_dst}
+  hour_offset_dst=$(zdump -v -c $YEAR,$(( YEAR + 1 )) $timezone_name| awk -F= '{if($0~/isdst=1/)off1=$NF;if($0~/isdst=0/)off0=$NF}END{print (off1-off0)/3600}')
+  
+
+  #Establish timezone of tide calendar
+  case $ztype in
+   L*|l*) #local time (eg UTC+09:30)
+     TIMEZONE=$timezone_utc_offset
+     #TZLABEL="Time Zone $(echo $TIMEZONE|awk -F'[C:]' '{printf "%+03i%02i",-$2,$3}')" #traditional POSIX style
+     TZLABEL="Local Standard Time"
+     DSTLABEL=""
+     if [[ $hasdst ]] then;
+       #DSTLABEL="When daylight saving time is in force, add ${hour_offset_dst} hour to times"
+       DSTLABEL="Add ${hour_offset_dst} hour to the predicted times during periods of Daylight Saving"
+     fi
+     ztype=loc
+   ;;
+   D*|d*) #daylight saving (eg Australia/Adelaide)
+     TIMEZONE=$timezone_name
+     TZLABEL="Local Time"
+     DSTLABEL=""
+     if [[ $hasdst ]] then;
+       #DSTLABEL="Standard time (${timezone_utc_offset}) or daylight savings time (${timezone_utc_offset_dst}) when in effect"
+       DSTLABEL="Times have been corrected for Daylight Saving when in effect"
+     fi
+     ztype=dst
+   ;;
+   U*|u*) #utc time (ie UTC+00:00)
+     TIMEZONE=UTC+00:00
+     TZLABEL="UTC Time"
+     DSTLABEL="Times are in Coordinated Universal Time (UTC+00:00)"
+     ztype=utc
+   ;;
+  esac
+
+  #Establish array of required data types
+  case $caltype in
+   *)required_types=(hlw pre moon);;
+  esac
+
+  #Establish array of optional data types
+  optional_types=(mth_hi mth_lo)
+
+  #Establish primary prediction type (the first required type)
+  ptype=${required_types[0]}
+
+  #Locate moon file
+  #TO DO - put in function
+  moonfile=${tidal_store_etc}/moon.$YEAR
+  echo "..locating moon phases"
+  if [[ ! -s ${moonfile} ]] then
+   #url="https://api.usno.navy.mil/moon/phase?year=$preyear" #deprectaed api
+   url="https://aa.usno.navy.mil/api/moon/phases/year?year=$preyear"  #new api
+   echo "..downloading moon phases from $url" 
+   wget -q -O- --no-check-certificate "$url" | ${utils}/moon.py >${moonfile}
+   if [[ ! -s ${moonfile} ]] then
+    echo "..ERROR - problem downloading moon phases"
+    exit
+   fi
+  fi
+
+  #Generate sun file with t42
+  #TO DO - put in function
+  if [[ $SUNSET == 1 ]] then
+   required_types+=(sun)
+   echo "..generating times of sunrise/sunset (quietly with t42 via $tide_realm)"
+   sunfile=${tmp}/${ANTT}.sun.csv
+   ${tide_realm} -S $YEAR -A -stem${sunfile%.sun.csv} $ANTT  >${sunfile}.stdout
+  fi
+
+  #Locate tide files
+  echo "..locating required tide files"
+  for ftype in ${required_types[*]} ${optional_types[*]}
+  do
+   case $ftype in
+    hlw) hlwfile=$(locate_t2_file $ANTT predictions hlw hlw.csv $YEAR);;
+    ext) extfile=$(locate_t2_file $ANTT predictions ext hlw.csv $YEAR);;
+    pre) prefile=$(locate_t2_file $ANTT predictions pre20 pre.csv $YEAR);;
+    mth_hi) mth_hifile=$(locate_t2_file $ANTT predictions hlw mth_hi.csv $YEAR);;
+    mth_lo) mth_lofile=$(locate_t2_file $ANTT predictions hlw mth_lo.csv $YEAR);;
+   esac
+  done
+
+  #Check existence of data files
+  set -A existing_types
+  for ftype in ${required_types[*]} ${optional_types[*]}
+  do
+   nameref myfile=${ftype}file
+   if [[ -s $myfile ]] then
+     existing_types+=($ftype)
+   elif [[ $(match_word $ftype "${required_types[*]}") ]] then
+     echo "..STOP required file type not found: $ftype"
+     clean_exit
+   fi
+  done
+
+  #Prepare temporary data files for gnuplot
+  echo ""
+  echo "Data preparation for $ANTT"
+  echo "---------------------------------"
+
+  #Nominate target data files for timezone adjustment
+  hlwdata=${tmp}/${ANTT}_hlw.data
+  extdata=${tmp}/${ANTT}_ext.data
+  curdata=${tmp}/${ANTT}_cur.data
+  tswdata=${tmp}/${ANTT}_tsw.data
+  predata=${tmp}/${ANTT}_pre.data
+  cpredata=${tmp}/${ANTT}_cpre.data
+  moondata=${tmp}/${ANTT}_moon.data
+  sundata=${tmp}/${ANTT}_sun.data
+  mth_hidata=${tmp}/${ANTT}_mth_hi.data
+  mth_lodata=${tmp}/${ANTT}_mth_lo.data
+
+  #Apply timezone adjustment to existing files
+  echo "..applying timezone adjustments to $TIMEZONE"
+  for ftype in ${existing_types[*]}
+  do
+   nameref myfile=${ftype}file
+   nameref mydata=${ftype}data
+   ${utils}/adjust_timezone.ksh -z $TIMEZONE $myfile > $mydata
+  done
+
+  #Nominate target files for gnuplot
+  hlwgnu=${tmp}/${ANTT}_hlw.gnu
+  extgnu=${tmp}/${ANTT}_ext.gnu
+  curgnu=${tmp}/${ANTT}_cur.gnu
+  tswgnu=${tmp}/${ANTT}_tsw.gnu
+  pregnu=${tmp}/${ANTT}_pre.gnu
+  cpregnu=${tmp}/${ANTT}_cpre.gnu
+  moongnu=${tmp}/${ANTT}_moon.gnu
+  sungnu=${tmp}/${ANTT}_sun.gnu
+  dstgnu=${tmp}/${ANTT}_dst.gnu
+ 
+  #HLW waters
+  if [[ $(match_word hlw "${existing_types[*]}") ]] then
+   echo "..formatting high and low waters"
+   if [[ $(match_word mth_hi "${existing_types[*]}") && $(match_word mth_lo "${existing_types[*]}") ]] then
+    echo "..flagging extremes with monthly highest and lowest tides files"
+    hlw2gnux2 $mth_hidata $mth_lodata $hlwdata > $hlwgnu
+   else
+    hlw2gnux $hlwdata > $hlwgnu
+   fi
+  fi
+
+  #Regular-spaced predictions
+  if [[ $(match_word pre "${existing_types[*]}") ]] then
+   echo "..formatting 20 min predictions"
+   pre2gnu $predata > $pregnu
+  fi
+
+  #Site-specific moon data
+  echo "..formatting moon-phase data"
+  moon2gnu $moondata > $moongnu
+
+  #Site-specific sunrise sunset times
+  if [[ $(match_word sun "${existing_types[*]}") ]] then
+   echo "..formatting sunrise and sunset"
+   pre2gnu $sundata > $sungnu #can just use pre2gnu function
+  fi
+
+
+
+#------------------------------------------------------------------
+#CREATE THE PLOT   
+#------------------------------------------------------------------
+
+  echo ""
+  echo "Tide calendar generation for $ANTT"
+  echo "---------------------------------"
+
+  #Set output PDF directory
+  if [[ ! $PDFSET ]] then
+   PDF=${tidal_store}/${ANTT}/tables/${YEAR}
+  else
+   PDF=$PDFSET
+  fi
+  mkdir -p $PDF
+
+  #Establish postscript and pdf filename
+  case $facet in 
+   units)
+    ALLPS=${tmp}/${ANTT}_${YEAR}_${ptype}.cal_${caltype}_${ztype}_feet.ps
+    ALLPDF=${PDF}/${ANTT}_${YEAR}_${ptype}.cal_${caltype}_${ztype}_feet.pdf
+   ;;
+   *)
+    ALLPS=${tmp}/${ANTT}_${YEAR}_${ptype}.cal_${caltype}_${ztype}.ps
+    ALLPDF=${PDF}/${ANTT}_${YEAR}_${ptype}.cal_${caltype}_${ztype}.pdf
+   ;;
+  esac
+  rm -f ${ALLPS}
+
+  #Collect text labels
+  LABEL1="TIDAL PREDICTIONS FOR $NAME"
+  LABEL2="\"".DATETAG."\""
+  LABEL3=$TZLABEL
+  LABEL4="Prediction Datum is $DATUM"
+  LABEL6=$UNITSLABEL
+
+  #Collect range of tide plot
+  Y2=$(minmax -C $hlwfile| awk -v convf=$CONVF '{max=$4*convf;bin=max<1?1:2;print max - max%bin + bin}')
+  Y1=0 #predictions might be less than zero, but will leave for now
+  YINCR=$(( (Y2 - Y1) / 4.0 ))  #Use 4.0 instead of 4 so YINCR does not round to integer
+
+  #Check if client wants imperial scale on r.h.s
+  if [[ $IMPERIAL == 1 ]] then
+    ADDIMPERIAL=1  #ADDIMPERIAL was introduced to allow for various checks, but they can be done externally now
+  fi
+
+  #Loop through months
+  for MONTH in ${MONTHS}
+  do
+
+   #Calculate X axis parameters
+   #Total number of days in month                           
+   NDAYS=$(date +"%d" -d "${YEAR}-${MONTH}-01 + 1 month - 1 min")
+   DATETAG=$(date +"%B %Y" -d${YEAR}-${MONTH}-01 | tr "[:lower:]" "[:upper:]" )
+
+   #Screen tracker
+   printf "%-15s \r" "..$DATETAG"
+
+   #Specify Daylight Savings adjustment where necessary
+   LABEL5=""
+   if [[ $hasdst ]] then
+    zone1=$(TZ=$timezone_name date +UTC%:z -d "${YEAR}-${MONTH}-01")
+    zone2=$(TZ=$timezone_name date +UTC%:z -d "${YEAR}-${MONTH}-01 +1 month - 1 min")
+    if [[ $zone1 == ${timezone_utc_offset_dst} || $zone2 == ${timezone_utc_offset_dst} ]] then
+     LABEL5=${DSTLABEL}
+    fi
+   fi
+   
+
+   #Output gnuplot variables to temporary dem
+   echo "ANTT=\"${ANTT}\"" >${tmp}/TMP.dem
+   echo "HEMI=\"${HEMI}\"" >>${tmp}/TMP.dem
+   echo "YEAR=\"${YEAR}\"" >>${tmp}/TMP.dem
+   echo "MONTH=\"${MONTH}\"" >>${tmp}/TMP.dem
+   echo "DATETAG=\"${DATETAG}\"" >>${tmp}/TMP.dem
+   echo "LABEL1=\"${LABEL1}\"" >>${tmp}/TMP.dem
+   echo "LABEL2=\"${LABEL2}\"" >>${tmp}/TMP.dem
+   echo "LABEL3=\"${LABEL3}\"" >>${tmp}/TMP.dem
+   echo "LABEL4=\"${LABEL4}\"" >>${tmp}/TMP.dem
+   echo "LABEL5=\"${LABEL5}\"" >>${tmp}/TMP.dem
+   echo "LABEL6=\"${LABEL6}\"" >>${tmp}/TMP.dem
+   echo "TYPE=\"${caltype}\"" >>${tmp}/TMP.dem
+   echo "STYLE=\"${STYLE}\"" >>${tmp}/TMP.dem
+   echo "COLOR=\"${COLOR}\"" >>${tmp}/TMP.dem
+   echo "TIMEFMT=\"'${TIMEFMT}'\"" >>${tmp}/TMP.dem
+   echo "Y1=\"${Y1}\"" >>${tmp}/TMP.dem
+   echo "Y2=\"${Y2}\"" >>${tmp}/TMP.dem
+   echo "UNITS=\"${UNITS}\"" >>${tmp}/TMP.dem
+   echo "YINCR=\"${YINCR}\"" >>${tmp}/TMP.dem
+   echo "NDAYS=\"${NDAYS}\"" >>${tmp}/TMP.dem
+   echo "src=\"${src}\"" >>${tmp}/TMP.dem
+   echo "HLWDATA=\"${hlwgnu}\"" >>${tmp}/TMP.dem
+   echo "PREDATA=\"${pregnu}\"" >>${tmp}/TMP.dem
+   echo "MOONDATA=\"${moongnu}\"" >>${tmp}/TMP.dem
+   echo "SUNDATA=\"${sungnu}\"" >>${tmp}/TMP.dem
+   echo "EXTDATA=\"${extgnu}\"" >>${tmp}/TMP.dem
+   echo "DSTDATA=\"${dstgnu}\"" >>${tmp}/TMP.dem
+   echo "XINCR=21600" >>${tmp}/TMP.dem
+   #Optional items to highlight in calendar
+   echo "EXTREME=\"${EXTREME}\"" >>${tmp}/TMP.dem
+   echo "EXTREMEHLW=\"${EXTREMEHLW}\"" >>${tmp}/TMP.dem
+   echo "WHITEBORDER=\"${WHITEBORDER}\"" >>${tmp}/TMP.dem
+   echo "ORDERPAGES=\"${ORDERPAGES}\"" >>${tmp}/TMP.dem
+   echo "SUNSET=\"${SUNSET}\"" >>${tmp}/TMP.dem
+   echo "FLOATKEY=\"${FLOATKEY}\"" >>${tmp}/TMP.dem
+   echo "ADDIMPERIAL=\"${ADDIMPERIAL}\"" >>${tmp}/TMP.dem
+   echo "TRACE=\"${TRACE}\"" >>${tmp}/TMP.dem
+   if [[ -n $WET ]] then; echo "WET=\"${WET}\"" >>${tmp}/TMP.dem;fi
+   if [[ -n $DRY ]] then; echo "DRY=\"${DRY}\"" >>${tmp}/TMP.dem;fi
+   echo "ONTAP=\"${ONTAP}\"" >>${tmp}/TMP.dem
+   echo "SEPARATOR=\"','\"" >>${tmp}/TMP.dem
+   echo "MISSING=\"'9999.000'\"" >>${tmp}/TMP.dem
+
+   #Create plot from temporary dem as well as master and loop dem's
+   PSFILE=${ALLPS%.ps}_${MONTH}.ps
+   gnuplot ${tmp}/TMP.dem ${src}/TYPE_${caltype}.dem ${src}/MASTER_CALENDAR.dem > ${PSFILE}
+   
+   #Concatenate page
+   cat ${PSFILE} >> ${ALLPS}
+   
+   #Create monthly pdf if necessary
+   if [[ $MONTHLYPDF == 1 ]] then
+    case $facet in
+     units)PDFFILE=${PDF}/${ANTT}_${YEAR}${MONTH}_${ptype}.cal_${caltype}_${ztype}_feet.pdf;;
+     *)PDFFILE=${PDF}/${ANTT}_${YEAR}${MONTH}_${ptype}.cal_${caltype}_${ztype}.pdf;;
+    esac
+    ps2pdf -sPAPERSIZE=a4 ${PSFILE} ${PDFFILE}
+   fi
+
+  done
+  
+  #Screen tracker
+  printf "%-16s \n" "..done"
+
+
+  #Create full year pdf         
+  ps2pdf -sPAPERSIZE=a4 ${ALLPS} ${ALLPDF}
+  echo "..your pdf tide calendar is $ALLPDF"
+
+done
+
+#------------------------------------------------------------------
+#CLEANUP
+#------------------------------------------------------------------
+cleanup

@@ -1,0 +1,220 @@
+# DAYLOOP_cal.dem - Gnuplot loop script called by MASTER_CALENDAR.dem
+
+# Plots tide predictions for each day of the month, in a loop.             
+#
+# History
+# Feb2014:  First version for tide__calendar.  J.Chittleborough 
+# Aug2020:  Adapted for tide_calendar2 use with tidal realm.  J.Chittleborough 
+# Jul2025:  Added UNITS as a variable.   J.Chittleborough 
+
+#Establish day of month
+DAY=DAY
+#Establish day of week  [(0..6); 0 is Sunday]
+WEEKDAY=system("date +%w -d".YEAR."-".MONTH."-".DAY."")
+
+
+#X-axis options
+X1=system("date +".TIMEFMT." -d".YEAR."-".MONTH."-".DAY."")
+X2=system("date +".TIMEFMT." -d\"".YEAR."-".MONTH."-".DAY." + 1 day\"")
+X2TIC=system("date +".TIMEFMT." -d\"".YEAR."-".MONTH."-".DAY." + 1 day - 1 hour\"")
+ 
+if(WEEKDAY == 6)X2TIC=X2
+set xrange [X1:X2]
+set x2range [X1:X2]
+set xtics scale 0.0 offset 0,graph 0.05 font "Helvetica,8" X1,XINCR,X2TIC ;set format x "%k"
+
+#Y-axis options
+set yrange [Y1:Y2]
+set ytics scale 0.0 offset graph 0.05,0 font "Helvetica,8" Y1+1*YINCR,YINCR,Y2-1*YINCR
+set format y ""
+if(DAY == 1 || WEEKDAY == 0)set format y "%g".UNITS
+#Imperial option on Y2 axis (far r.h.s. of calendar)
+if(YINCR == 0.5)Y2TIC='("1''8\"" 0.5, "3''3\"" 1.0, "4''11\"" 1.5)' ;\
+else if(YINCR == 1.0)Y2TIC='("3''3\"" 1.0, "6''7\"" 2.0, "9''10\"" 3.0)' ;\
+else Y2TIC='("" 0.0)' 
+if(ADDIMPERIAL == 1) ;\
+if(DAY == NDAYS || WEEKDAY == 6)set y2tics scale 0.0 offset graph -0.05,0 font "Helvetica,8" @Y2TIC
+
+#Position of each day panel
+XPOS=LEFT+WEEKDAY*XPANEL
+if(DAY == 1)ROW=1
+if(DAY > 1 && WEEKDAY == 0)ROW=ROW+1
+if(ROW > 5)ROW=1
+YPOS=(PFOOT+PBODY)-ROW*YPANEL
+
+#Establish date string used in data files- to help filter out daily data
+DATE=word(X1,1)
+#Establish date sans day - to help filter out monthly data 
+#(beware dependancy on TIMEFMT)
+DATESANSDAY=DATE[4:10]
+
+#Establish whether highest or lowest tide for year occurs on the page
+#This will help control display of items in legend
+ISMAX=0;ISMIN=0
+if(EXTREME == 1) ;\
+ISMAX=system("grep -e ++ ".HLWDATA."| grep -c ".DATESANSDAY."" );\
+ISMIN=system("grep -e -- ".HLWDATA."| grep -c ".DATESANSDAY."" )
+
+#TIDE CURVE SECTION  (PRE DATA)
+#-------------------------------------------------------------------------
+set size XPANEL,YPREBOX
+set origin XPOS,YPOS+BMARGIN
+set key off
+
+#Set background color (-c option)
+if(COLOR >= 1)set object 1 rectangle behind from graph 0.01,0.01 to graph 0.99,0.99 fc rgb PREBOX fs solid @PREBOXDEN noborder 
+
+#Shade night time - between sunrise/sunset, put sunset key entry last
+if(SUNSET == 1 && DAY == 1)SAVE=KEYCOUNT; KEYCOUNT=int(NKEYS); set key at @KEYPOSITION; KEYCOUNT=SAVE
+#..first do midnight to sunrise
+if(SUNSET == 1)plot "<(grep ".DATE." ".SUNDATA."|grep R)" using 1:(Y1):(X1):1:(Y1+0.01):(Y2-0.01) with boxxyerrorbars fs solid 1.0 noborder lc rgb NITCOL  t "Night time"
+#..if this is our first plot, we need to turn off some things
+if(SUNSET == 1)unset object ;set format x "";set format y "";unset y2tics ;if(DAY == 1)unset label;unset key
+#..now do sunset to following midnight
+if(SUNSET == 1)plot  "<(grep ".DATE." ".SUNDATA."|grep S)" using 1:(Y1):1:(X2):(Y1+0.01):(Y2-0.01) with boxxyerrorbars fs solid 1.0 noborder lc rgb NITCOL 
+
+#Plot tide curve (pre data)
+set style fill solid @PRECOLDEN noborder
+plot PREDATA using 1:2 lt 1 lw 0.4 lc rgb PRECOL 
+
+#Turn off x,y tics
+set format x ""
+set format y ""
+unset y2tics
+#Turn off background colour objects
+if(COLOR >= 1)unset object 
+if(SUNSET == 1)unset object 
+#Turn off labels after day1 plot1
+if(DAY == 1)unset label
+
+#If plotting extremes, we temporarily adjust the size and origin, 
+#so symbols are not obscured by the next day or fall beyond the graph area
+#Need to treat first column of each row slightly different, to avoid duplicates
+if(EXTREME == 1) ;\
+if(DAY == 1 || WEEKDAY == 0); X1TEMP=X1 ; XPOSTEMP=XPOS ; XSIZETEMP=XPANEL ;\
+else X1TEMP=system("echo ".YEAR." ".MONTH." ".DAY." | awk -v format=".TIMEFMT." '{printf \"%s\",strftime(format,mktime($1\" \"$2\" \"$3\" 00 00 00\")-21600)}' - ") ;\
+XPOSTEMP=XPOS-0.25*(XPANEL) ;  XSIZETEMP=XPANEL*1.25
+if(EXTREME == 1) ;\
+set size XSIZETEMP,YPREBOX*1.5 ;\
+set origin XPOSTEMP,YPOS+BMARGIN-0.25*(YPREBOX) ;\
+set xrange [X1TEMP:X2] ;\
+set x2range [X1TEMP:X2] ;\
+set yrange [Y1-0.25*(Y2-Y1):Y2+0.25*(Y2-Y1)] ;\
+unset grid;unset border 
+
+#Mark monthly high adjacent tide curve (data flagged +)
+#This line only to put some whitespace 
+if(EXTREME == 1 && WHITEBORDER == 1)unset key;plot "<(awk -F, -v flag='+' '$NF==flag' ".HLWDATA.")" using (timecolumn(1)+word(stringcolumn(4),1)[1:2]*3600+word(stringcolumn(4),1)[3:4]*60):(word(stringcolumn(4),2)+0.05*(Y2-Y1)) with points pt 9 ps 1.0*MARKUP lw 0.0 lt 1 lc rgb "white"
+if(EXTREME ==1 && DAY == 1 && ISMAX == 0)KEYCOUNT=KEYCOUNT+1;set key at @KEYPOSITION 
+if(EXTREME == 1)plot  "<(awk -F, -v flag='+' '$NF==flag' ".HLWDATA.")" using (timecolumn(1)+word(stringcolumn(4),1)[1:2]*3600+word(stringcolumn(4),1)[3:4]*60):(word(stringcolumn(4),2)+0.05*(Y2-Y1)) with points pt 9 ps 1.0 lw 0.6 lt 1 lc rgb HATCOL t "Highest tide of the month"
+if(DAY == 1)unset key
+
+#Mark yearly high adjacent tide curve (data flagged ++)
+#This line only to put some whitespace 
+if(EXTREME == 1 && WHITEBORDER == 1)unset key;plot  "<(awk -F, -v flag='++' '$NF==flag' ".HLWDATA.")" using (timecolumn(1)+word(stringcolumn(4),1)[1:2]*3600+word(stringcolumn(4),1)[3:4]*60):(word(stringcolumn(4),2)+0.05*(Y2-Y1)) with points pt 9 ps 1.0*MARKUP lw 0.0 lt 1 lc rgb "white"
+if(EXTREME == 1 && DAY == 1 && ISMAX == 1)KEYCOUNT=KEYCOUNT+1;set key at @KEYPOSITION 
+if(EXTREME == 1)plot  "<(awk -F, -v flag='++' '$NF==flag' ".HLWDATA.")" using (timecolumn(1)+word(stringcolumn(4),1)[1:2]*3600+word(stringcolumn(4),1)[3:4]*60):(word(stringcolumn(4),2)+0.05*(Y2-Y1)) with points pt 72 ps 1.0 lw 1.0 lt 1 lc rgb HATCOL t "Highest tide of the year"
+if(DAY == 1)unset key
+
+#Mark monthly low adjacent tide curve (data flagged -)
+#This line only to put some whitespace 
+if(EXTREME == 1 && WHITEBORDER == 1)unset key;plot  "<(awk -F, -v flag='-' '$NF==flag' ".HLWDATA.")" using (timecolumn(1)+word(stringcolumn(4),1)[1:2]*3600+word(stringcolumn(4),1)[3:4]*60):(word(stringcolumn(4),2)-0.05*(Y2-Y1)) with points pt 11 ps 1.0*MARKUP lw 0.0 lt 1 lc rgb "white"
+if(EXTREME == 1 && DAY == 1 && ISMIN == 0)KEYCOUNT=KEYCOUNT+1;set key at @KEYPOSITION 
+if(EXTREME == 1)plot  "<(awk -F, -v flag='-' '$NF==flag' ".HLWDATA.")" using (timecolumn(1)+word(stringcolumn(4),1)[1:2]*3600+word(stringcolumn(4),1)[3:4]*60):(word(stringcolumn(4),2)-0.05*(Y2-Y1)) with points pt 11 ps 1.0 lw 0.6 lt 1 lc rgb LATCOL t "Lowest tide of the month"
+if(DAY == 1)unset key
+
+#Mark yearly low adjacent tide curve (data flagged --)
+#This line only to put some whitespace 
+if(EXTREME == 1 && WHITEBORDER == 1)unset key;plot  "<(awk -F, -v flag='--' '$NF==flag' ".HLWDATA.")" using (timecolumn(1)+word(stringcolumn(4),1)[1:2]*3600+word(stringcolumn(4),1)[3:4]*60):(word(stringcolumn(4),2)-0.05*(Y2-Y1)) with points pt 11 ps 1.0*MARKUP lw 0.0 lt 1 lc rgb "white"
+if(EXTREME == 1 && DAY == 1 && ISMIN == 1)KEYCOUNT=KEYCOUNT+1;set key at @KEYPOSITION 
+if(EXTREME == 1)plot  "<(awk -F, -v flag='--' '$NF==flag' ".HLWDATA.")" using (timecolumn(1)+word(stringcolumn(4),1)[1:2]*3600+word(stringcolumn(4),1)[3:4]*60):(word(stringcolumn(4),2)-0.05*(Y2-Y1)) with points pt 73 ps 1.0 lw 1.0 lt 1 lc rgb LATCOL t "Lowest tide of the year"
+if(DAY == 1)unset key
+
+#If plotting extremes, now reset the size,origin,ranges and grid back
+if(EXTREME == 1) set origin XPOS,YPOS+BMARGIN ;\
+set size XPANEL,YPREBOX ;\
+set xrange[X1:X2] ;\
+set x2range[X1:X2] ;\
+set yrange[Y1:Y2] ;\
+set grid @GRIDSPEC; set border @BORDERSPEC
+
+
+#Highlight wetting and drying on tide curve
+if(exists("WET") && DAY == 1)KEYCOUNT=KEYCOUNT+1;set key at @KEYPOSITION 
+if(exists("WET"))plot PREDATA using 1:($2>=WET?$2:1/0) w filledcurves y1=WET lt 1 lw 0.4 lc rgb WETCOL  t "Tides above ".WET."m"
+if(DAY == 1)unset key 
+if(exists("DRY") && DAY == 1)KEYCOUNT=KEYCOUNT+1;set key at @KEYPOSITION 
+if(exists("DRY"))plot PREDATA using 1:($2<=DRY?$2:1/0) w filledcurves below y1=DRY lt 1 lw 0.4 lc rgb DRYCOL t "Tides below ".DRY."m"
+if(DAY == 1)unset key 
+
+#Trace the tide curve with a line
+if(TRACE == 1)plot PREDATA using 1:($2) w lines lt 1 lw 0.4 lc rgb LINCOL
+
+
+#HIGH/LOW TIMES AND HEIGHTS SECTION  (HLW DATA)
+#-------------------------------------------------------------------------
+set size XPANEL,YHLWBOX
+YPOS=YPOS+BMARGIN+YPREBOX
+set origin XPOS,YPOS
+unset xtics;unset ytics;unset x2tics;unset y2tics
+if(COLOR >= 1)set object 1 rectangle behind from graph 0.01,0.01 to graph 0.99,0.99 fc rgb TAPBOX fs solid @TAPBOXDEN noborder 
+#YTAP1=4.8;YTAP2=0.2
+YTAP1=5.8;YTAP2=0.2
+set yrange [YTAP1:YTAP2]
+
+#Highlight box for wetting and drying (option -W and -D)
+if(exists("WET") && ONTAP == 1)plot "<(grep ".DATE." ".HLWDATA.")" using (timecolumn(1)+16.5*3600):(word(stringcolumn(4),2)>=WET?$3:1/0):(6.8*3600):(0.45) with boxxyerrorbars fs solid 1.0 noborder lc rgb WETCOL t "Tides above ".WET."m" ; if(COLOR >= 1)unset object 
+if(exists("DRY") && ONTAP == 1)plot "<(grep ".DATE." ".HLWDATA.")" using (timecolumn(1)+16.5*3600):(word(stringcolumn(4),2)<=DRY?$3:1/0):(6.8*3600):(0.45) with boxxyerrorbars fs solid 1.0 noborder lc rgb DRYCOL t "Tides below ".DRY."m" ; if(COLOR >= 1)unset object 
+
+#Highlight box for monthly high and low tides (Disable at this stage)
+ 
+#Plot actual high and low waters (hlw data)
+#set label 18 "".DAY at graph 0.28,0.70 right font "Helvetica-Narrow-Bold,18"
+set label 18 "".DAY at graph 0.28,0.75 right font "Helvetica-Narrow-Bold,18"
+plot HLWDATA using (timecolumn(1)+10*3600):3:4 with labels font "Helvetica,8" left lt rgb TAPCOL
+unset label 18 
+if(COLOR >= 1)unset object 
+
+#Mark monthly high and low adjacent tide times (option -L)
+XTAPX=8.5
+#This line only to put some whitespace 
+if(EXTREMEHLW == 1 && WHITEBORDER == 1)plot "<(awk -F, -v flag='+' '$NF==flag' ".HLWDATA.")" using (timecolumn(1)+XTAPX*3600):3 with points pt 9 ps 1.0*MARKUP lw 0.0 lt 1 lc rgb "white"
+if(EXTREMEHLW == 1)plot  "<(awk -F, -v flag='+' '$NF==flag' ".HLWDATA.")" using (timecolumn(1)+XTAPX*3600):3 with points pt 9 ps 1.0 lw 0.6 lt 1 lc rgb HATCOL
+#This line only to put some whitespace 
+if(EXTREMEHLW == 1 && WHITEBORDER == 1)plot "<(awk -F, -v flag='-' '$NF==flag' ".HLWDATA.")" using (timecolumn(1)+XTAPX*3600):3 with points pt 11 ps 1.0*MARKUP lw 0.0 lt 1 lc rgb "white"
+if(EXTREMEHLW == 1)plot "<(awk -F, -v flag='-' '$NF==flag' ".HLWDATA.")" using (timecolumn(1)+XTAPX*3600):3 with points pt 11 ps 1.0 lw 0.6 lt 1 lc rgb LATCOL
+
+#Mark yearly high and low adjacent tide times (option -L)
+#This line only to put some whitespace 
+if(EXTREMEHLW == 1 && WHITEBORDER == 1)plot "<(awk -F, -v flag='++' '$NF==flag' ".HLWDATA.")" using (timecolumn(1)+XTAPX*3600):3 with points pt 9 ps 1.0*MARKUP lw 0.0 lt 1 lc rgb "white" 
+if(EXTREMEHLW == 1)plot "<(awk -F, -v flag='++' '$NF==flag' ".HLWDATA.")" using (timecolumn(1)+XTAPX*3600):3 with points pt 72 ps 1.0 lw 1.0 lt 1 lc rgb HATCOL  
+#This line only to put some whitespace 
+if(EXTREMEHLW == 1 && WHITEBORDER == 1)plot "<(awk -F, -v flag='--' '$NF==flag' ".HLWDATA.")" using (timecolumn(1)+XTAPX*3600):3 with points pt 11 ps 1.0*MARKUP lw 0.0 lt 1 lc rgb "white" 
+if(EXTREMEHLW == 1)plot "<(awk -F, -v flag='--' '$NF==flag' ".HLWDATA.")" using (timecolumn(1)+XTAPX*3600):3 with points pt 73 ps 1.0 lw 1.0 lt 1 lc rgb LATCOL
+
+
+#Plot moon phases
+#YMOON=YTAP1+0.25*(YTAP2-YTAP1)
+YMOON=YTAP1+0.38*(YTAP2-YTAP1)
+#If northern hemisphere, invert point types used for first/last quarter
+PT_FQ=25;PT_LQ=22
+if(HEMI[1:1] eq "N" || HEMI[1:1] eq "n")PT_FQ=22;PT_LQ=25
+#In case COLOR=1 we plot a full moon at all 4 phases, then overplot with correct phase
+if(TYPE eq "cal1" && DAY == 1)KEYCOUNT=8;set key at @KEYPOSITION 
+plot "<(awk -F, '{print $1}' ".MOONDATA.")" using (timecolumn(1)+5*3600):(YMOON) with points pt 71 ps 1.5 lw 1.2 lt 1 t "Full moon"
+if(TYPE eq "cal1" && DAY == 1)KEYCOUNT=9;set key at @KEYPOSITION 
+plot "<(awk -F, '{if($2~/LQ/||$2~/3Q/||$2==0.5)print $1}' ".MOONDATA.")" using (timecolumn(1)+5*3600):(YMOON) with points pt PT_LQ ps 1.5 lw 0.6 lt 1 t "Last quarter"
+if(TYPE eq "cal1" && DAY == 1)KEYCOUNT=6;set key at @KEYPOSITION 
+plot "<(awk -F, '{if($2~/NM/||$2==0)print $1}' ".MOONDATA.")" using (timecolumn(1)+5*3600):(YMOON) with points pt 31 ps 1.5 lw 0.6 lt 1 t "New moon"
+if(TYPE eq "cal1" && DAY == 1)KEYCOUNT=7;set key at @KEYPOSITION 
+plot "<(awk -F, '{if($2~/FQ/||$2~/1Q/||$2==-0.5)print $1}' ".MOONDATA.")" using (timecolumn(1)+5*3600):(YMOON) with points pt PT_FQ ps 1.5 lw 0.6 lt 1 t "First quarter"
+if(DAY == 1)unset key
+
+
+#Plot top 10 (Still to implement)
+#plot "<(toptap -hd ".TIMEFMT." ".TOPHLWDATA." |awk '{if(NR>3)print $1,$2,\",\"(NR-3)}' - )" using 1:(YTAP1):2 with labels offset character 0,-0.5
+
+#Loop counter 
+DAY=DAY + 1
+if(DAY <= NDAYS)reread
+

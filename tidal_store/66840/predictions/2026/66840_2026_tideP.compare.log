@@ -1,0 +1,2 @@
+umask 002
+/g/ns/ntc/op/dm/bin/t1_dev.ksh  -s /g/ns/ntc/op/dm/tidal_store/66840/predictions/2026/66840_2026_tideP  -M 66840     -T /g/ns/ntc/op/dm/tidal_store/66840/predictions/2026/66840_2026_tideP.con,/g/ns/ntc/op/dm/tidal_store/66840/predictions/2025/66840_2025_legacy.con,"66840_2024_tideA (1993-2023 Analysis)","ws1993-2022 (1993-2022 Analysis)"  
