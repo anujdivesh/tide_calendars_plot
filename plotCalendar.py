@@ -55,7 +55,7 @@ def cosine_interp(t, t0, t1, y0, y1):
     return mid + amp * math.cos(math.pi * frac)
 
 figsize = cm2inch((21,29.7))
-fig, ax = plt.subplots(figsize=figsize, dpi=120)
+fig, ax = plt.subplots(figsize=figsize, dpi=500)
 ax.axis('off')
 
 # Draw day cards for the current month, aligned under weekday headings
