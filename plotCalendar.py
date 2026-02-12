@@ -5,6 +5,7 @@ from pathlib import Path
 import math
 import matplotlib.dates as mdates
 import matplotlib as mpl
+import textwrap
 
 def cm2inch(*tupl):
     inch = 2.54
@@ -201,9 +202,9 @@ line_offset_frac = line_offset_cm / fig_height_cm
 
 # Mini-grid style
 x_ticks = [0, 6, 12, 18, 24]
-y_ticks = [0, 1, 2, 3]
+y_ticks = [0, 1, 2, 3, 4]
 xticklabels = ["0", "6", "12", "18", "0"]
-yticklabels = ["0", "1", "2", "3"]
+yticklabels = ["0", "1", "2", "3", "4"]
 grid_color = '#d0d0d0'
 grid_lw = 0.6
 grid_alpha = 1.0
@@ -266,25 +267,64 @@ for row, week in enumerate(weeks):
             max_lines = 4
             events_to_show = events[:max_lines]
 
-            # Layout within the top area of the card
+            # Find monthly max/min tide event for this day
+            month_points = [(dt, h) for (dt, h, _p) in tide_points if dt.year == year and dt.month == month]
+            max_evt = max(month_points, key=lambda x: x[1]) if month_points else None
+            min_evt = min(month_points, key=lambda x: x[1]) if month_points else None
+
+            # Layout within the top area of the card (always pack lines at the top)
             pad_top = 0.006
-            pad_bottom = 0.004
-            top_area_height = max(0.001, line_offset_frac - pad_top - pad_bottom)
-            line_step = top_area_height / max(1, len(events_to_show))
+            font_size = 8
+            fig_h_in = fig.get_size_inches()[1]
+            fig_w_in = fig.get_size_inches()[0]
+            line_step = ((font_size * 1.05) / 72.0) / fig_h_in  # ~1.05em in figure coords
             right_pad = 0.006
             text_x = cell_left + cell_width_frac - right_pad
+            # Estimate monospace character width in figure coords (~0.60em)
+            char_w = ((font_size * 0.60) / 72.0) / fig_w_in
+            marker_size = font_size
+            marker_color = '#111111'
+            marker_edge = 'white'
+            marker_edgewidth = 1.0
 
             for idx, (evt_dt, evt_h, evt_phase) in enumerate(events_to_show):
                 evt_time = evt_dt.strftime('%H%M')
-                # Only show first + second columns: time and height
                 evt_txt = f"{evt_time} {evt_h:0.2f}"
+                y_pos = (cell_top - pad_top) - idx * line_step
+
+                # Check if this event is the monthly max or min
+                is_max = max_evt and abs((evt_dt - max_evt[0]).total_seconds()) < 1 and abs(evt_h - max_evt[1]) < 1e-4
+                is_min = min_evt and abs((evt_dt - min_evt[0]).total_seconds()) < 1 and abs(evt_h - min_evt[1]) < 1e-4
+
+                # Plot marker (monthly max/min) right next to the tide time text.
+                # Since the tide text is right-aligned, compute the left edge from text length.
+                marker_gap_chars = 0.7
+                marker_x = text_x - (len(evt_txt) + marker_gap_chars) * char_w
+                marker_x = max(cell_left + 0.01, marker_x)
+                if is_max or is_min:
+                    marker = '^' if is_max else 'v'
+                    # Nudge marker slightly downward for better vertical alignment
+                    marker_y = y_pos - (0.38 * line_step)
+                    fig.add_artist(
+                        plt.Line2D(
+                            [marker_x], [marker_y],
+                            transform=fig.transFigure,
+                            linestyle='None',
+                            marker=marker,
+                            markersize=marker_size,
+                            markerfacecolor=marker_color,
+                            markeredgecolor=marker_edge,
+                            markeredgewidth=marker_edgewidth,
+                            zorder=10,
+                        )
+                    )
 
                 fig.text(
                     text_x,
-                    (cell_top - pad_top) - idx * line_step,
+                    y_pos,
                     evt_txt,
                     ha='right', va='top',
-                    color='#444', fontsize=8,
+                    color='#444', fontsize=font_size,
                     family='monospace', zorder=4
                 )
 
@@ -318,16 +358,16 @@ for row, week in enumerate(weeks):
         # Y axis: never show the 0 label, and only show labels when there's no card to the left
         is_leftmost_visible = (row_leftmost_col.get(row) == col)
         if is_leftmost_visible:
-            grid_ax.set_yticklabels(['', '1', '2', '3'])
+            grid_ax.set_yticklabels(['', '1m', '2m', '3m', ''])
         else:
             grid_ax.set_yticklabels([''] * len(yticklabels))
 
         # Thin light-grey grid lines
         grid_ax.grid(False)
-        grid_ax.vlines(x_ticks, ymin=0, ymax=3, colors=grid_color, linewidth=grid_lw, alpha=grid_alpha, zorder=10)
+        grid_ax.vlines(x_ticks, ymin=0, ymax=4, colors=grid_color, linewidth=grid_lw, alpha=grid_alpha, zorder=10)
         grid_ax.hlines(y_ticks, xmin=0, xmax=24, colors=grid_color, linewidth=grid_lw, alpha=grid_alpha, zorder=10)
 
-        grid_ax.tick_params(axis='both', which='both', length=0, labelsize=7, pad=1)
+        grid_ax.tick_params(axis='both', which='both', length=0, labelsize=7, pad=2)
 
         # Clean look
         for spine in grid_ax.spines.values():
@@ -481,8 +521,303 @@ def draw_tide_curves(fig, year, month, tide_points, day_boxes,
     flush_segment()
 
 
+def mark_month_max_tide(fig, year, month, tide_points, day_boxes,
+                        y_min=0.0, y_max=3.0,
+                        marker_color='#111111', marker_size=8, border_color='white', border_width=1.0):
+    """Mark the highest tide of the month with an upward triangle."""
+    month_points = [(dt, h) for (dt, h, _p) in tide_points if dt.year == year and dt.month == month]
+    if not month_points:
+        return
+
+    max_dt, max_h = max(month_points, key=lambda x: x[1])
+    box = day_boxes.get((year, month, max_dt.day))
+    if not box:
+        return
+
+    hours = max_dt.hour + (max_dt.minute / 60.0) + (max_dt.second / 3600.0)
+    x = box['x0'] + (hours / 24.0) * (box['x1'] - box['x0'])
+    hh = min(max(max_h, y_min), y_max)
+    y = box['y0'] + ((hh - y_min) / (y_max - y_min)) * (box['y1'] - box['y0'])
+
+    # Nudge marker above the curve (convert points -> figure fraction)
+    fig_h_in = fig.get_size_inches()[1]
+    # For an upward triangle marker, a ~0.45*markersize offset usually places
+    # the bottom point of the marker right on the curve.
+    dy = ((marker_size * 0.45) / 72.0) / fig_h_in
+    y = min(y + dy, box['y1'] - (0.5 / 72.0) / fig_h_in)
+
+    fig.add_artist(
+        plt.Line2D(
+            [x], [y],
+            transform=fig.transFigure,
+            linestyle='None',
+            marker='^',
+            markersize=marker_size,
+            markerfacecolor=marker_color,
+            markeredgecolor=border_color,
+            markeredgewidth=border_width,
+            zorder=12,
+        )
+    )
+
+
+def mark_month_min_tide(fig, year, month, tide_points, day_boxes,
+                        y_min=0.0, y_max=3.0,
+                        marker_color='#111111', marker_size=8, border_color='white', border_width=1.0):
+    """Mark the lowest tide of the month with a downward triangle."""
+    month_points = [(dt, h) for (dt, h, _p) in tide_points if dt.year == year and dt.month == month]
+    if not month_points:
+        return
+
+    min_dt, min_h = min(month_points, key=lambda x: x[1])
+    box = day_boxes.get((year, month, min_dt.day))
+    if not box:
+        return
+
+    hours = min_dt.hour + (min_dt.minute / 60.0) + (min_dt.second / 3600.0)
+    x = box['x0'] + (hours / 24.0) * (box['x1'] - box['x0'])
+    hh = min(max(min_h, y_min), y_max)
+    y = box['y0'] + ((hh - y_min) / (y_max - y_min)) * (box['y1'] - box['y0'])
+
+    # Nudge marker below the curve so the top point touches the curve.
+    fig_h_in = fig.get_size_inches()[1]
+    dy = ((marker_size * 0.45) / 72.0) / fig_h_in
+    y = max(y - dy, box['y0'] + (0.5 / 72.0) / fig_h_in)
+
+    fig.add_artist(
+        plt.Line2D(
+            [x], [y],
+            transform=fig.transFigure,
+            linestyle='None',
+            marker='v',
+            markersize=marker_size,
+            markerfacecolor=marker_color,
+            markeredgecolor=border_color,
+            markeredgewidth=border_width,
+            zorder=12,
+        )
+    )
+
+
 # Draw tide curves on top of the mini-grids
 draw_tide_curves(fig, year, month, tide_points, day_boxes)
+
+# Mark the highest tide of the month
+mark_month_max_tide(fig, year, month, tide_points, day_boxes)
+
+# Mark the lowest tide of the month
+mark_month_min_tide(fig, year, month, tide_points, day_boxes)
+
+
+# --- Footer notes ---
+# Compute y-position: 1cm below the last row of cards
+footer_gap_cm = 1.0
+footer_y = (cards_top_y - num_rows * (card_height_frac + row_gap_y_frac)) - (footer_gap_cm / fig_height_cm)
+footer_y = max(footer_y, 0.01)  # Clamp to stay on page
+
+# Draw upward triangle icon and label (match high tide marker)
+footer_marker_size = 6  # must match mark_month_max_tide marker_size
+footer_marker_color = '#111111'
+footer_marker_edge = 'white'
+footer_marker_edgewidth = 1.0
+footer_text = "Highest tide of the month"
+
+# Triangle marker (always use Line2D for figure coords)
+fig.add_artist(
+    plt.Line2D(
+        [label_side_gap_frac + 0.003], [footer_y],
+        transform=fig.transFigure,
+        linestyle='None',
+        marker='^',
+        markersize=footer_marker_size,
+        markerfacecolor=footer_marker_color,
+        markeredgecolor=footer_marker_edge,
+        markeredgewidth=footer_marker_edgewidth,
+        zorder=20,
+    )
+)
+
+# Text label, left-aligned with cards, a bit right of the marker
+footer_high_text = fig.text(
+    label_side_gap_frac + 0.013, footer_y,
+    footer_text,
+    ha='left', va='center',
+    color='#222', fontsize=9, zorder=20
+)
+
+# Moon icons + labels: 1cm to the right of the footer_high_text, stacked vertically
+try:
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    bbox = footer_high_text.get_window_extent(renderer=renderer)
+    (text_right_x, _text_top_y) = fig.transFigure.inverted().transform((bbox.x1, bbox.y1))
+
+    # Keep footer content within 1cm of the page right edge
+    page_right_limit_x = 1.0 - (1.0 / fig_width_cm)
+    right_margin = 0.002
+    content_right_limit_x = min(page_right_limit_x, 1.0 - right_margin)
+
+    moon_x = text_right_x + (1.0 / fig_width_cm)  # 1cm spacing to the right
+    icon_cm = 0.35
+    icon_gap_y_cm = 0.20
+    icon_w = icon_cm / fig_width_cm
+    icon_h = icon_cm / fig_height_cm
+    moon_x = min(moon_x, content_right_limit_x - icon_w)
+
+    moon_dir = Path(__file__).parent / 'moon_icons'
+    moon_paths = sorted(moon_dir.glob('*.png'))
+    moon_labels = [
+        'First quarter',
+        'Full Moon',
+        'Last quarter',
+        'New Moon',
+    ]
+
+    moon_label_artists = []
+    moon_right_x = moon_x + icon_w
+
+    for i, icon_path in enumerate(moon_paths):
+        yy = footer_y - i * ((icon_cm + icon_gap_y_cm) / fig_height_cm)
+        icon_bottom = yy - icon_h / 2
+
+        icon_ax = fig.add_axes([moon_x, icon_bottom, icon_w, icon_h], zorder=21)
+        icon_ax.patch.set_alpha(0)
+        icon_ax.imshow(plt.imread(str(icon_path)))
+        icon_ax.set_axis_off()
+
+        label_x = moon_x + icon_w + (0.18 / fig_width_cm)
+        label_txt = moon_labels[i % len(moon_labels)]
+        moon_label = fig.text(
+            label_x, yy,
+            label_txt,
+            ha='left', va='center',
+            color='#222', fontsize=9, zorder=21
+        )
+        moon_label_artists.append(moon_label)
+
+    # Place copyright + disclaimer block 3cm to the right of the moon column
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    for t in moon_label_artists:
+        bb = t.get_window_extent(renderer=renderer)
+        (x1, _y1) = fig.transFigure.inverted().transform((bb.x1, bb.y1))
+        moon_right_x = max(moon_right_x, x1)
+
+    # Move copyright/disclaimer block slightly to the left (reduce spacing from 3.0cm to 2.2cm)
+    right_block_x = moon_right_x + (2 / fig_width_cm)
+    right_block_x = min(right_block_x, content_right_limit_x)
+
+    copyright_label = "© Copyright"
+    copyright_value = "Pacific Community SPC"
+    disclaimer_label = "Disclaimer"
+    disclaimer_value = (
+        "These tide predictions are supplied in good faith and are belived to be correct. "
+        "They are not necessarily related to a local hydrographic chart datum. "
+        "\n"
+        "\n"
+        "No warranty is given in respect to errors, omissions, or suitability for any purpose."
+    )
+
+    fs = 8
+    fig_h_in = fig.get_size_inches()[1]
+    line_h = ((fs * 1.2) / 72.0) / fig_h_in
+
+    # Compute a colon x-position so both ':' align vertically
+    tmp1 = fig.text(0, 0, copyright_label, fontsize=fs, alpha=0,weight='bold', transform=fig.transFigure)
+    tmp2 = fig.text(0, 0, disclaimer_label, fontsize=fs, alpha=0,weight='bold', transform=fig.transFigure)
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    w1 = tmp1.get_window_extent(renderer=renderer).width / fig.bbox.width
+    w2 = tmp2.get_window_extent(renderer=renderer).width / fig.bbox.width
+    tmp1.remove()
+    tmp2.remove()
+
+    colon_gap = (0.12 / fig_width_cm)
+    value_gap = (0.18 / fig_width_cm)
+    colon_x = right_block_x + max(w1, w2) + colon_gap
+    max_x = content_right_limit_x
+    colon_x = min(colon_x, max_x - 0.01)
+    value_x = min(colon_x + value_gap, max_x - 0.01)
+
+    # Copyright line (inline with Highest tide footer)
+    fig.text(
+        colon_x - colon_gap, footer_y,
+        copyright_label,
+        ha='right', va='center',
+        color='#222', fontsize=fs, zorder=21, weight='bold'
+    )
+    fig.text(
+        colon_x, footer_y,
+        ":",
+        ha='center', va='center',
+        color='#222', fontsize=fs, zorder=21
+    )
+    fig.text(
+        value_x, footer_y,
+        copyright_value,
+        ha='left', va='center',
+        color='#222', fontsize=fs, zorder=21
+    )
+
+    # Disclaimer line below
+    disc_y = footer_y - (0.75 * line_h)
+    fig.text(
+        colon_x - colon_gap, disc_y,
+        disclaimer_label,
+        ha='right', va='top',
+        color='#222', fontsize=fs, zorder=21, weight='bold'
+    )
+    fig.text(
+        colon_x, disc_y,
+        ":",
+        ha='center', va='top',
+        color='#222', fontsize=fs, zorder=21
+    )
+
+    # Wrap disclaimer based on the *actual* available pixel width, preserving manual line breaks
+    avail_w = max(0.10, max_x - value_x)
+    avail_px = avail_w * fig.bbox.width
+    probe = fig.text(0, 0, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", fontsize=fs, alpha=0, transform=fig.transFigure)
+    fig.canvas.draw()
+    probe_w_px = probe.get_window_extent(renderer=renderer).width
+    probe.remove()
+    avg_char_px = max(5.0, probe_w_px / 52.0)
+    # Allow more words per line in the disclaimer by increasing wrap_chars by 20%
+    wrap_chars = max(35, int(avail_px / avg_char_px * 1.2))
+    # Split disclaimer on manual line breaks, wrap each line, then join
+    disclaimer_lines = disclaimer_value.split('\n')
+    disclaimer_wrapped = '\n'.join(textwrap.fill(line, width=wrap_chars) for line in disclaimer_lines)
+    fig.text(
+        value_x, disc_y,
+        disclaimer_wrapped,
+        ha='left', va='top',
+        color='#222', fontsize=fs, zorder=21,
+        linespacing=1.15,
+    )
+except Exception:
+    pass
+
+# Downward triangle and text for lowest tide
+footer_low_y = footer_y - (0.022)
+fig.add_artist(
+    plt.Line2D(
+        [label_side_gap_frac + 0.003], [footer_low_y],
+        transform=fig.transFigure,
+        linestyle='None',
+        marker='v',
+        markersize=footer_marker_size,
+        markerfacecolor=footer_marker_color,
+        markeredgecolor=footer_marker_edge,
+        markeredgewidth=footer_marker_edgewidth,
+        zorder=20,
+    )
+)
+fig.text(
+    label_side_gap_frac + 0.013, footer_low_y,
+    "Lowest tide of the month",
+    ha='left', va='center',
+    color='#222', fontsize=9, zorder=20
+)
 
 # Save the figure as a .pdf file
 fig.savefig('tidal_calendar.pdf', format='pdf')
