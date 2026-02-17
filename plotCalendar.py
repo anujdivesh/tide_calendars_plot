@@ -78,8 +78,8 @@ top_whitespace_frac = top_whitespace_cm / fig_height_cm
 header_height_frac = header_height_cm / fig_height_cm
 
 
-# Calculate horizontal gaps (1.5cm on each side for table/label area)
-label_side_gap_cm = 1.5
+ # Increase horizontal gaps for more space on left/right
+label_side_gap_cm = 2.5  # More space on sides
 label_side_gap_frac = label_side_gap_cm / fig_width_cm
 label_area_width_frac = 1 - 2 * label_side_gap_frac
 
@@ -137,10 +137,14 @@ fig.text(
 labels = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"]
 num_labels = len(labels)
 label_y = light_grey_bottom_frac - 0.025  # a little below the light grey area
-cell_width_frac = label_area_width_frac / num_labels
+# Make cards bigger by increasing cell width
+cell_width_frac = (label_area_width_frac / num_labels) * 1.15
+# Center cards horizontally by shifting the starting point
+total_card_width = cell_width_frac * num_labels
+side_space = (label_area_width_frac - total_card_width) / 2
 for i, label in enumerate(labels):
     # Center label above each table cell
-    x = label_side_gap_frac + (i + 0.5) * cell_width_frac
+    x = label_side_gap_frac + side_space + (i + 0.5) * cell_width_frac
     fig.text(
         x, label_y,
         label,
@@ -239,7 +243,8 @@ for row, week in enumerate(weeks):
         if day_num == 0:
             continue
 
-        cell_left = label_side_gap_frac + col * cell_width_frac
+        # Center cards horizontally
+        cell_left = label_side_gap_frac + side_space + col * cell_width_frac
         cell_top = cards_top_y - row * (card_height_frac + row_gap_y_frac)
         cell_bottom = cell_top - card_height_frac
 
@@ -255,10 +260,10 @@ for row, week in enumerate(weeks):
 
         # Date number in the top area of the card
         fig.text(
-            cell_left + 0.006, cell_top - 0.006,
+            cell_left + 0.004, cell_top - 0.006,
             str(day_num),
             ha='left', va='top',
-            color='#444', fontsize=12, weight='bold', zorder=4
+            color='#222', fontsize=10, weight='bold', zorder=3
         )
 
         # List times/tides/phases to the right of the date number (in the top half)
@@ -273,12 +278,12 @@ for row, week in enumerate(weeks):
             min_evt = min(month_points, key=lambda x: x[1]) if month_points else None
 
             # Layout within the top area of the card (always pack lines at the top)
-            pad_top = 0.006
-            font_size = 8
+            pad_top = 0.004
+            font_size = 7
             fig_h_in = fig.get_size_inches()[1]
             fig_w_in = fig.get_size_inches()[0]
             line_step = ((font_size * 1.05) / 72.0) / fig_h_in  # ~1.05em in figure coords
-            right_pad = 0.006
+            right_pad = 0.004
             text_x = cell_left + cell_width_frac - right_pad
             # Estimate monospace character width in figure coords (~0.60em)
             char_w = ((font_size * 0.60) / 72.0) / fig_w_in
@@ -288,7 +293,7 @@ for row, week in enumerate(weeks):
             marker_edgewidth = 1.0
 
             for idx, (evt_dt, evt_h, evt_phase) in enumerate(events_to_show):
-                evt_time = evt_dt.strftime('%H%M')
+                evt_time = evt_dt.strftime('%I:%M%p').upper()
                 evt_txt = f"{evt_time} {evt_h:0.2f}"
                 y_pos = (cell_top - pad_top) - idx * line_step
 
@@ -318,7 +323,7 @@ for row, week in enumerate(weeks):
                             zorder=10,
                         )
                     )
-
+                
                 fig.text(
                     text_x,
                     y_pos,
@@ -329,7 +334,8 @@ for row, week in enumerate(weeks):
                 )
 
         # Split line inside the card
-        y_line = cell_top - line_offset_frac
+        # Move split line lower to avoid chart overlapping value prints
+        y_line = cell_top - (line_offset_frac * 0.85)
         fig.lines.append(
             plt.Line2D(
                 [cell_left, cell_left + cell_width_frac],
