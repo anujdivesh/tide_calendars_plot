@@ -352,6 +352,24 @@ print(f"Fetching moon phase data from USNO for {year}...")
 all_moon_phases = get_moon_phases_from_usno(year)
 moon_phases = {d: p for (d, p) in all_moon_phases.items() if d.year == year and d.month == month}
 
+# Optional per-day Palolo icon (palolo2.jpg) shown under the moon icon slot.
+# Put `palolo2.jpg` next to this script, then enable + add dates.
+SHOW_PALOLO2_IN_CARDS = True
+PALOLO2_ICON_PATH = Path(__file__).with_name('palolo2.jpg')
+PALOLO2_DATES = set([
+    datetime.date(year, month, 5),
+])
+
+palolo2_img = None
+if SHOW_PALOLO2_IN_CARDS:
+    try:
+        if not PALOLO2_ICON_PATH.exists():
+            print(f"Warning: palolo2 icon not found at {PALOLO2_ICON_PATH}")
+        else:
+            palolo2_img = plt.imread(str(PALOLO2_ICON_PATH))
+    except Exception as e:
+        print(f"Warning: failed to load palolo2 icon: {e}")
+
 # Group tide extrema by day for listing in the card header area
 tide_events_by_day = {}
 for dt, height, phase in tide_points:
@@ -403,20 +421,37 @@ for row, week in enumerate(weeks):
 
         # Add moon icon underneath the date (ONLY FOR MAJOR PHASES)
         current_date = datetime.date(year, month, day_num)
+
+        # Icon slot coordinates (used by moon + optional palolo2)
+        moon_icon_size_cm = 0.35
+        moon_icon_w = moon_icon_size_cm / fig_width_cm
+        moon_icon_h = moon_icon_size_cm / fig_height_cm
+        icon_left = cell_left + 0.006
+        moon_icon_bottom = cell_top - 0.02 - moon_icon_h
+
         if current_date in moon_phases:
             icon_key = moon_phases[current_date]
             if icon_key in moon_icons:
-                icon_size_cm = 0.35
-                icon_width_frac = icon_size_cm / fig_width_cm
-                icon_height_frac = icon_size_cm / fig_height_cm
-
-                icon_left = cell_left + 0.006
-                icon_bottom = cell_top - 0.02 - icon_height_frac
-
-                icon_ax = fig.add_axes([icon_left, icon_bottom, icon_width_frac, icon_height_frac], zorder=6)
+                icon_ax = fig.add_axes([icon_left, moon_icon_bottom, moon_icon_w, moon_icon_h], zorder=6)
                 icon_ax.patch.set_alpha(0)
                 icon_ax.imshow(moon_icons[icon_key])
                 icon_ax.set_axis_off()
+
+        # Optional palolo2 icon in a small row under the moon icon slot (icon only)
+        if (
+            SHOW_PALOLO2_IN_CARDS
+            and palolo2_img is not None
+            and (current_date in PALOLO2_DATES)
+        ):
+            palolo2_size_cm = 0.30
+            palolo2_w = palolo2_size_cm / fig_width_cm
+            palolo2_h = palolo2_size_cm / fig_height_cm
+            palolo2_gap_cm = 0.06
+            palolo2_bottom = moon_icon_bottom - (palolo2_gap_cm / fig_height_cm) - palolo2_h
+            palolo2_ax = fig.add_axes([icon_left, palolo2_bottom, palolo2_w, palolo2_h], zorder=6)
+            palolo2_ax.patch.set_alpha(0)
+            palolo2_ax.imshow(palolo2_img)
+            palolo2_ax.set_axis_off()
 
         # List times/tides/phases to the right of the date number (in the top half)
         events = tide_events_by_day.get(day_num, [])
@@ -829,8 +864,14 @@ footer_text = "Highest tide of the month"
 footer_left_notes = [
     "Height in meters",
     "Prediction datum is Lowest Astronomical Tide.",
-    "4th October Palolo Rising"
 ]
+
+# Optional icon+text under "Lowest tide of the month" (boolean-controlled)
+# Set to False when you don't want this entry.
+SHOW_PALOLO_FOOTER = True
+PALOLO_FOOTER_DATE = datetime.date(year, 2, 5)
+PALOLO_FOOTER_TEXT = "5th Feburary Pololo Rising"
+PALOLO_ICON_PATH = Path(__file__).with_name('palolo2.jpg')
 
 # Align footer content with the left edge of the card grid
 footer_left_x = label_side_gap_frac + side_space
@@ -1086,6 +1127,7 @@ except Exception:
 
 # Downward triangle and text for lowest tide
 footer_low_y = footer_y - (0.022)
+footer_row_gap = footer_y - footer_low_y
 fig.add_artist(
     plt.Line2D(
         [footer_marker_x], [footer_low_y],
@@ -1105,6 +1147,48 @@ fig.text(
     ha='left', va='center',
     color='#222', fontsize=9, zorder=20
 )
+
+# Optional Palolo entry under the lowest-tide legend
+if SHOW_PALOLO_FOOTER and (month == PALOLO_FOOTER_DATE.month):
+    try:
+        if not PALOLO_ICON_PATH.exists():
+            print(f"Warning: palolo icon not found at {PALOLO_ICON_PATH}")
+        palolo_img = plt.imread(str(PALOLO_ICON_PATH))
+
+        palolo_icon_cm = 0.30
+        palolo_icon_w = palolo_icon_cm / fig_width_cm
+        palolo_icon_h = palolo_icon_cm / fig_height_cm
+
+        # Match the same vertical spacing as Highest -> Lowest tide rows
+        palolo_center_y_target = footer_low_y - footer_row_gap
+        palolo_bottom_min = 0.012
+        palolo_bottom = max(palolo_bottom_min, palolo_center_y_target - (palolo_icon_h / 2))
+        palolo_center_y = palolo_bottom + (palolo_icon_h / 2)
+
+        # Center the icon on the same x as the triangle markers
+        palolo_left = max(0.0, footer_marker_x - (palolo_icon_w / 2))
+
+        palolo_ax = fig.add_axes(
+            [palolo_left, palolo_bottom, palolo_icon_w, palolo_icon_h],
+            zorder=21,
+        )
+        palolo_ax.patch.set_alpha(0)
+        palolo_ax.imshow(palolo_img)
+        palolo_ax.set_axis_off()
+
+        fig.text(
+            footer_text_x,
+            palolo_center_y,
+            PALOLO_FOOTER_TEXT,
+            ha='left', va='center',
+            color='#222', fontsize=8, zorder=21,
+        )
+    except Exception as e:
+        print(f"Warning: failed to render palolo footer entry: {e}")
+elif SHOW_PALOLO_FOOTER and (month != PALOLO_FOOTER_DATE.month):
+    print(
+        f"Note: SHOW_PALOLO_FOOTER is True, but calendar month={month} doesn't match PALOLO_FOOTER_DATE.month={PALOLO_FOOTER_DATE.month}"
+    )
 
 # Save the figure as a .pdf file
 fig.savefig('tidal_calendar.pdf', format='pdf')
