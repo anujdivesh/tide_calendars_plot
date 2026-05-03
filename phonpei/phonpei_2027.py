@@ -60,6 +60,26 @@ def cosine_interp(t, t0, t1, y0, y1):
     return mid + amp * math.cos(math.pi * frac)
 
 
+def ceil_to_increment(value: float, increment: float) -> float:
+    if increment <= 0:
+        return float(value)
+    return math.ceil(value / increment) * increment
+
+
+def round_to_increment(value: float, increment: float) -> float:
+    if increment <= 0:
+        return float(value)
+    return round(value / increment) * increment
+
+
+def format_ft_tick(val: float) -> str:
+    if abs(val) < 1e-9:
+        return "0"
+    if abs(val - round(val)) < 1e-9:
+        return f"{int(round(val))}ft"
+    return f"{val:g}ft"
+
+
 def get_sun_times_for_month(year, month, location):
     """Generate sunrise/sunset times for all days in a month using astral (returns LOCAL time)."""
     sun_times = {}
@@ -163,12 +183,56 @@ def get_moon_phases_from_usno(year):
 
 # Define Suva location for sunrise/sunset
 SUVA = LocationInfo(
-    name="Suva",
-    region="Fiji",
-    timezone="Pacific/Fiji",
-    latitude=-18.1248,
-    longitude=178.4501,
+    name="Pohnpei",
+    region="Federated States of Micronesia",
+    timezone="Pacific/Pohnpei",
+    latitude=6.98666666666667,
+    longitude=158.243333333333,
 )
+
+# --- Output control ---
+# When True, renders a single multi-page PDF containing all months of 2026.
+RENDER_ALL_MONTHS_2026 = True
+ALL_MONTHS_YEAR = 2027
+ALL_MONTHS_OUTPUT_PDF = 'tidal_calendar_2027.pdf'
+
+# If running the "all months" mode, generate the combined PDF and exit.
+# Uses runpy to re-run this script with different MONTH values while sharing cached data.
+if (
+    __name__ == "__main__"
+    and RENDER_ALL_MONTHS_2026
+    and not globals().get("_RUN_AS_CHILD")
+):
+    from matplotlib.backends.backend_pdf import PdfPages
+    import runpy
+
+    moon_icon_dir_env = os.environ.get('MOON_ICON_DIR')
+    moon_icon_dir = (
+        Path(moon_icon_dir_env).expanduser()
+        if moon_icon_dir_env
+        else (Path(__file__).parent / 'moon_icons')
+    )
+    if (not moon_icon_dir.exists()) and (Path(__file__).parent.parent / 'moon_icons').exists():
+        moon_icon_dir = Path(__file__).parent.parent / 'moon_icons'
+
+    shared_moon_icons = load_moon_icons(moon_icon_dir)
+    shared_all_moon_phases = get_moon_phases_from_usno(ALL_MONTHS_YEAR)
+
+    with PdfPages(ALL_MONTHS_OUTPUT_PDF) as pdf:
+        for m in range(1, 13):
+            runpy.run_path(
+                __file__,
+                run_name="__main__",
+                init_globals={
+                    "YEAR": ALL_MONTHS_YEAR,
+                    "MONTH": m,
+                    "_RUN_AS_CHILD": True,
+                    "_PDF_PAGES": pdf,
+                    "_MOON_ICONS": shared_moon_icons,
+                    "_ALL_MOON_PHASES": shared_all_moon_phases,
+                },
+            )
+    raise SystemExit
 
 figsize = cm2inch((21,29.7))
 fig, ax = plt.subplots(figsize=figsize, dpi=500)
@@ -176,8 +240,8 @@ ax.axis('off')
 
 # Draw day cards for the current month, aligned under weekday headings
 # Set these to render a specific month (e.g., YEAR=2027, MONTH=1). Leave as None to use current month.
-YEAR = 2025
-MONTH = 2
+YEAR = globals().get('YEAR', 2027)
+MONTH = globals().get('MONTH', 1)
 
 today = datetime.date.today()
 year = YEAR if YEAR is not None else today.year
@@ -187,7 +251,7 @@ month = MONTH if MONTH is not None else today.month
 # Calculate positions in figure coordinates
 fig_width_cm, fig_height_cm = 21, 29.7
 top_whitespace_cm = 0.0  # full top coverage for header
-header_height_cm = 2
+header_height_cm = 2.2
 
 # Convert cm to figure fraction
 top_whitespace_frac = top_whitespace_cm / fig_height_cm
@@ -210,18 +274,9 @@ fig.patches.extend([
         (header_side_gap_frac, 1 - top_whitespace_frac - header_height_frac),
         header_width_frac, header_height_frac,
         transform=fig.transFigure, figure=fig,
-        color='#666666', zorder=1
+        color='#868686', zorder=1
     )
 ])
-
-# Add white title text aligned with the calendar/charts left edge
-fig.text(
-    label_side_gap_frac, 1 - top_whitespace_frac - header_height_frac/2 - (0.4 / fig_height_cm),
-    'TIDAL PREDICTIONS FOR SUVA',
-    ha='left', va='center',
-    color='white', fontsize=16, weight='bold', zorder=2
-)
-
 
 # Add a small, lighter grey area below the header
 light_grey_height_cm = 0.9  # Small height
@@ -239,13 +294,6 @@ fig.patches.extend([
 
 # Month + year label in the light grey strip (full month name)
 month_label = f"{calendar.month_name[month]} {year}".upper()
-fig.text(
-    label_side_gap_frac,
-    light_grey_bottom_frac + light_grey_height_frac - (0.30 / fig_height_cm),
-    month_label + "     Local Standard Time",
-    ha='left', va='top',
-    color='#111111', fontsize=12, weight='bold', zorder=2
-)
 
 # Place weekday labels below the lighter grey area, within 2cm side margins
 
@@ -258,6 +306,25 @@ cell_width_frac = (label_area_width_frac / num_labels) * 1.15
 # Center cards horizontally by shifting the starting point
 total_card_width = cell_width_frac * num_labels
 side_space = (label_area_width_frac - total_card_width) / 2
+
+# Align header title + month/date text to the chart grid start
+chart_left_x = label_side_gap_frac + side_space
+
+fig.text(
+    chart_left_x, 1 - top_whitespace_frac - header_height_frac/2 - (0.4 / fig_height_cm),
+    'TIDAL PREDICTIONS FOR POHNPEI',
+    ha='left', va='center',
+    color='white', fontsize=16, weight='bold', zorder=2
+)
+
+fig.text(
+    chart_left_x,
+    light_grey_bottom_frac + light_grey_height_frac - (0.30 / fig_height_cm),
+    month_label + "     Local Standard Time",
+    ha='left', va='top',
+    color='#111111', fontsize=12, weight='bold', zorder=2
+)
+
 for i, label in enumerate(labels):
     # Center label above each table cell
     x = label_side_gap_frac + side_space + (i + 0.5) * cell_width_frac
@@ -300,7 +367,7 @@ if weeks:
 num_rows = len(weeks)
 
 # Card geometry
-card_height_cm = 3.5
+card_height_cm = 3.3
 
 # Vertical gap between week rows (increase to create space above x-axis labels)
 row_gap_y_cm = 0.6
@@ -308,7 +375,58 @@ row_gap_y_frac = row_gap_y_cm / fig_height_cm
 
 label_table_gap_frac = 0.015
 cards_top_y = label_y - label_table_gap_frac
-bottom_margin_frac = 0.06
+
+# --- Footer config & reserved space (anchored from bottom of page) ---
+# Footer is positioned from the bottom of the page (e.g. 2cm above the bottom edge),
+# and the calendar grid reserves space above it to prevent overlap.
+FOOTER_BOTTOM_MARGIN_CM = 1.1
+FOOTER_GAP_ABOVE_CM = 0.6
+FOOTER_ROW_GAP_FRAC = 0.022
+
+# Extra footer notes (bottom-left): add/remove lines here
+footer_left_notes = [
+    "Height in feet",
+    "Prediction datum is Tide Gauge Zero",
+]
+
+# Optional icon+text under "Lowest tide of the month" (boolean-controlled)
+SHOW_PALOLO_FOOTER = False
+PALOLO_FOOTER_DATE = datetime.date(year, 2, 5)
+PALOLO_FOOTER_TEXT = "5th February Pololo Rising"
+PALOLO_ICON_PATH = Path(__file__).with_name('palolo2.jpg')
+
+# Reserve the Palolo-row spacing even when Palolo is off, so the gap above
+# footer_left_notes remains consistent.
+RESERVE_PALOLO_FOOTER_SPACE = True
+
+# Estimate how far the footer extends below the top footer row (in cm)
+_footer_moon_icon_cm = 0.35
+_footer_moon_gap_y_cm = 0.20
+_footer_palolo_icon_cm = 0.45
+_footer_notes_top_gap_cm = 0.55
+_footer_notes_fs = 8
+
+_footer_moon_dir = Path(__file__).parent / 'moon_icons'
+if (not _footer_moon_dir.exists()) and (Path(__file__).parent.parent / 'moon_icons').exists():
+    _footer_moon_dir = Path(__file__).parent.parent / 'moon_icons'
+_footer_moon_paths = sorted(_footer_moon_dir.glob('*.png'))
+_n_moon = max(1, len(_footer_moon_paths))
+
+_row_step_cm = _footer_moon_icon_cm + _footer_moon_gap_y_cm
+_moon_stack_depth_cm = (_n_moon - 1) * _row_step_cm + (_footer_moon_icon_cm / 2.0)
+
+_footer_row_gap_cm = FOOTER_ROW_GAP_FRAC * fig_height_cm
+_palolo_depth_cm = 2.0 * _footer_row_gap_cm + (_footer_palolo_icon_cm / 2.0)
+_anchor_depth_cm = max(_moon_stack_depth_cm, _palolo_depth_cm if RESERVE_PALOLO_FOOTER_SPACE else 0.0)
+
+_line_h_cm_notes = (_footer_notes_fs * 1.2 / 72.0) * 2.54
+_notes_depth_cm = _anchor_depth_cm + _footer_notes_top_gap_cm + max(1, len(footer_left_notes)) * _line_h_cm_notes
+
+_footer_depth_below_cm = max(_moon_stack_depth_cm, _palolo_depth_cm, _notes_depth_cm) + 0.2
+footer_y = (FOOTER_BOTTOM_MARGIN_CM + _footer_depth_below_cm) / fig_height_cm
+
+# Reserve space for the footer + a little gap above it
+bottom_margin_frac = min(0.95, footer_y + (FOOTER_GAP_ABOVE_CM / fig_height_cm))
 available_height_frac = cards_top_y - bottom_margin_frac
 
 max_card_height_frac = (available_height_frac - (num_rows - 1) * row_gap_y_frac) / max(1, num_rows)
@@ -320,21 +438,39 @@ card_height_cm_effective = card_height_frac * fig_height_cm
 line_offset_cm = min(line_offset_cm_target, card_height_cm_effective * 0.7)
 line_offset_frac = line_offset_cm / fig_height_cm
 
-# Mini-grid style
+# Mini-grid style (feet)
 x_ticks = [0, 6, 12, 18, 24]
-y_ticks = [0, 1, 2, 3, 4]
-xticklabels = ["0", "6", "12", "18", "0"]
-yticklabels = ["0", "1", "2", "3", "4"]
+xticklabels = ["12AM", "6AM", "12PM", "6PM", "12AM"]
 grid_color = '#d0d0d0'
 grid_lw = 0.6
 grid_alpha = 1.0
 
 # Tide data file (same folder as this script)
-DATA_FILE = '66840_hlw.data'
+DATA_FILE = 'FSM_583010_Pohnpei_hlw_2027_2028_ltz_feet.csv'
 tide_points = load_tide_extrema(Path(__file__).with_name(DATA_FILE))
 
+# Dynamic Y axis (feet):
+# - Y_MAX = max height in the *whole* dataset, rounded up to the next 0.5ft.
+# - Always show 3 labels on the leftmost card; hide the topmost label.
+# - Never plot 0 as a y tick.
+Y_MIN = 0.0
+_max_h = max((h for (_dt, h, _p) in tide_points), default=5.0)
+Y_MAX = max(0.5, ceil_to_increment(_max_h, 0.5))
+
+# Evenly spaced ticks (no 0 tick): pick a "nice" Y_MAX so that Y_MAX/4 lands
+# on a 0.5ft increment, giving ticks like 1.5, 3.0, 4.5, (top blank) 6.0.
+Y_MAX = max(2.0, Y_MAX)
+while abs((Y_MAX / 0.5) - round(Y_MAX / 0.5)) > 1e-9:
+    Y_MAX += 0.5
+while abs((Y_MAX / 2.0) - round(Y_MAX / 2.0)) > 1e-9:
+    Y_MAX += 0.5
+
+_step = Y_MAX / 4.0
+y_ticks = [_step, 2.0 * _step, 3.0 * _step, Y_MAX]
+yticklabels = [format_ft_tick(y_ticks[0]), format_ft_tick(y_ticks[1]), format_ft_tick(y_ticks[2]), ""]
+
 # Sun times for the month
-print(f"Calculating sunrise/sunset times for Suva, {month_label}...")
+print(f"Calculating sunrise/sunset times for Pohnpei, {month_label}...")
 sun_times = get_sun_times_for_month(year, month, SUVA)
 print(f"Generated sun times for {len(sun_times)} days")
 
@@ -345,16 +481,23 @@ moon_icon_dir = (
     if moon_icon_dir_env
     else (Path(__file__).parent / 'moon_icons')
 )
+# Fallback: allow moon_icons/ to live one level above this script (repo root)
+if (not moon_icon_dir.exists()) and (Path(__file__).parent.parent / 'moon_icons').exists():
+    moon_icon_dir = Path(__file__).parent.parent / 'moon_icons'
 print(f"Looking for moon icons in: {moon_icon_dir}")
-moon_icons = load_moon_icons(moon_icon_dir)
+moon_icons = globals().get('_MOON_ICONS')
+if moon_icons is None:
+    moon_icons = load_moon_icons(moon_icon_dir)
 
-print(f"Fetching moon phase data from USNO for {year}...")
-all_moon_phases = get_moon_phases_from_usno(year)
+all_moon_phases = globals().get('_ALL_MOON_PHASES')
+if all_moon_phases is None:
+    print(f"Fetching moon phase data from USNO for {year}...")
+    all_moon_phases = get_moon_phases_from_usno(year)
 moon_phases = {d: p for (d, p) in all_moon_phases.items() if d.year == year and d.month == month}
 
 # Optional per-day Palolo icon (palolo2.jpg) shown under the moon icon slot.
 # Put `palolo2.jpg` next to this script, then enable + add dates.
-SHOW_PALOLO2_IN_CARDS = True
+SHOW_PALOLO2_IN_CARDS = False
 PALOLO2_ICON_PATH = Path(__file__).with_name('palolo2.jpg')
 PALOLO2_DATES = set([
     datetime.date(year, month, 5),
@@ -586,29 +729,28 @@ for row, week in enumerate(weeks):
         grid_ax.patch.set_alpha(0)
 
         grid_ax.set_xlim(0, 24)
-        grid_ax.set_ylim(0, 3)
+        grid_ax.set_ylim(Y_MIN, Y_MAX)
         grid_ax.set_xticks(x_ticks)
         grid_ax.set_yticks(y_ticks)
 
         # X axis: always show labels on every mini-grid
-        card_xticklabels = (xticklabels[:-1] + ['24']) if (col == 6) else xticklabels
-        grid_ax.set_xticklabels(card_xticklabels)
+        grid_ax.set_xticklabels(xticklabels)
 
         # Y axis: never show the 0 label, and only show labels when there's no card to the left
         is_leftmost_visible = (row_leftmost_col.get(row) == col)
         if is_leftmost_visible:
-            grid_ax.set_yticklabels(['', '1.0m', '2.0m', '3.0m', ''])
+            grid_ax.set_yticklabels(yticklabels)
         else:
             grid_ax.set_yticklabels([''] * len(yticklabels))
 
         # Thin light-grey grid lines
         grid_ax.grid(False)
-        grid_ax.vlines(x_ticks, ymin=0, ymax=4, colors=grid_color, linewidth=grid_lw, alpha=grid_alpha, zorder=10)
+        grid_ax.vlines(x_ticks, ymin=Y_MIN, ymax=Y_MAX, colors=grid_color, linewidth=grid_lw, alpha=grid_alpha, zorder=10)
         grid_ax.hlines(y_ticks, xmin=0, xmax=24, colors=grid_color, linewidth=grid_lw, alpha=grid_alpha, zorder=10)
 
         # Add a little extra space between the chart and the bottom time labels
-        grid_ax.tick_params(axis='x', which='both', length=0, labelsize=7, pad=4)
-        grid_ax.tick_params(axis='y', which='both', length=0, labelsize=7, pad=2)
+        grid_ax.tick_params(axis='x', which='both', length=0, labelsize=6, pad=3)
+        grid_ax.tick_params(axis='y', which='both', length=0, labelsize=6, pad=1)
 
         # Clean look
         for spine in grid_ax.spines.values():
@@ -696,6 +838,16 @@ def draw_tide_curves(fig, year, month, tide_points, day_boxes,
     current_y0 = []
     prev_pos = None  # (row, col)
 
+    def append_point(box, hours, height):
+        nonlocal current_x, current_y, current_y0, prev_pos
+        x = box['x0'] + (hours / 24.0) * (box['x1'] - box['x0'])
+        hh = min(max(height, y_min), y_max)
+        y = box['y0'] + ((hh - y_min) / (y_max - y_min)) * (box['y1'] - box['y0'])
+        current_x.append(x)
+        current_y.append(y)
+        current_y0.append(box['y0'])
+        prev_pos = (box['row'], box['col'])
+
     def flush_segment():
         nonlocal current_x, current_y, current_y0
         if len(current_x) >= 2:
@@ -733,12 +885,22 @@ def draw_tide_curves(fig, year, month, tide_points, day_boxes,
         if h is None:
             continue
 
-        # Only plot within the target month
+        is_midnight = (t.hour == 0 and t.minute == 0 and t.second == 0 and t.microsecond == 0)
+
+        # Add a synthetic endpoint at x=24 for the *previous* day at midnight boundaries.
+        # This guarantees the curve/fill touches the right edge of each mini chart.
+        if is_midnight and prev_pos is not None:
+            prev_day = t - datetime.timedelta(days=1)
+            if prev_day.year == year and prev_day.month == month:
+                prev_box = day_boxes.get((year, month, prev_day.day))
+                if prev_box and (prev_box['row'], prev_box['col']) == prev_pos:
+                    append_point(prev_box, 24.0, h)
+
+        # Only plot points that belong to the target month/day boxes
         if t.year != year or t.month != month:
             continue
 
-        key = (year, month, t.day)
-        box = day_boxes.get(key)
+        box = day_boxes.get((year, month, t.day))
         if not box:
             continue
 
@@ -748,16 +910,8 @@ def draw_tide_curves(fig, year, month, tide_points, day_boxes,
             if pos[0] != prev_pos[0] or pos[1] not in (prev_pos[1], prev_pos[1] + 1):
                 flush_segment()
 
-        # Map to figure coordinates
         hours = t.hour + (t.minute / 60.0) + (t.second / 3600.0)
-        x = box['x0'] + (hours / 24.0) * (box['x1'] - box['x0'])
-        hh = min(max(h, y_min), y_max)
-        y = box['y0'] + ((hh - y_min) / (y_max - y_min)) * (box['y1'] - box['y0'])
-
-        current_x.append(x)
-        current_y.append(y)
-        current_y0.append(box['y0'])
-        prev_pos = pos
+        append_point(box, hours, h)
 
     flush_segment()
 
@@ -841,20 +995,22 @@ def mark_month_min_tide(fig, year, month, tide_points, day_boxes,
 
 
 # Draw tide curves on top of the mini-grids
-draw_tide_curves(fig, year, month, tide_points, day_boxes)
+draw_tide_curves(fig, year, month, tide_points, day_boxes, y_min=Y_MIN, y_max=Y_MAX)
 
 # Mark the highest tide of the month
-mark_month_max_tide(fig, year, month, tide_points, day_boxes)
+mark_month_max_tide(fig, year, month, tide_points, day_boxes, y_min=Y_MIN, y_max=Y_MAX)
 
 # Mark the lowest tide of the month
-mark_month_min_tide(fig, year, month, tide_points, day_boxes)
+mark_month_min_tide(fig, year, month, tide_points, day_boxes, y_min=Y_MIN, y_max=Y_MAX)
 
 
 # --- Footer notes ---
-# Compute y-position: 1cm below the last row of cards
-footer_gap_cm = 1.0
-footer_y = (cards_top_y - num_rows * (card_height_frac + row_gap_y_frac)) - (footer_gap_cm / fig_height_cm)
+# `footer_y` is computed earlier from the page bottom margin.
 footer_y = max(footer_y, 0.01)  # Clamp to stay on page
+
+# Downward triangle (lowest tide) y-position and row spacing
+footer_low_y = footer_y - (FOOTER_ROW_GAP_FRAC)
+footer_row_gap = footer_y - footer_low_y
 
 # Draw upward triangle icon and label (match plot marker size)
 footer_marker_size = 8  # matches mark_month_max_tide/mark_month_min_tide default marker_size
@@ -863,18 +1019,23 @@ footer_marker_edge = 'white'
 footer_marker_edgewidth = 1.0
 footer_text = "Highest tide of the month"
 
-# Extra footer notes (bottom-left): add/remove lines here
-footer_left_notes = [
-    "Height in meters",
-    "Prediction datum is Lowest Astronomical Tide.",
-]
+# Palolo footer geometry (also used as a *virtual* anchor for footer_left_notes)
+palolo_icon_cm = 0.45
+palolo_icon_w_default = palolo_icon_cm / fig_width_cm
+palolo_icon_h_default = palolo_icon_cm / fig_height_cm
+palolo_center_y_target_default = footer_low_y - footer_row_gap
+palolo_bottom_min = 0.012
+virtual_palolo_bottom = max(palolo_bottom_min, palolo_center_y_target_default - (palolo_icon_h_default / 2))
 
-# Optional icon+text under "Lowest tide of the month" (boolean-controlled)
-# Set to False when you don't want this entry.
-SHOW_PALOLO_FOOTER = True
-PALOLO_FOOTER_DATE = datetime.date(year, 2, 5)
-PALOLO_FOOTER_TEXT = "5th February Pololo Rising"
-PALOLO_ICON_PATH = Path(__file__).with_name('palolo2.jpg')
+palolo_bottom = None
+palolo_center_y = None
+palolo_icon_h = None
+palolo_icon_w = None
+if SHOW_PALOLO_FOOTER and (month == PALOLO_FOOTER_DATE.month):
+    palolo_icon_w = palolo_icon_w_default
+    palolo_icon_h = palolo_icon_h_default
+    palolo_bottom = virtual_palolo_bottom
+    palolo_center_y = palolo_bottom + (palolo_icon_h / 2)
 
 # Align footer content with the left edge of the card grid
 footer_left_x = label_side_gap_frac + side_space
@@ -924,6 +1085,8 @@ try:
     moon_x = min(moon_x, content_right_limit_x - icon_w)
 
     moon_dir = Path(__file__).parent / 'moon_icons'
+    if (not moon_dir.exists()) and (Path(__file__).parent.parent / 'moon_icons').exists():
+        moon_dir = Path(__file__).parent.parent / 'moon_icons'
     moon_paths = sorted(moon_dir.glob('*.png'))
     moon_labels = [
         'First quarter',
@@ -954,24 +1117,24 @@ try:
         )
         moon_label_artists.append(moon_label)
 
-    # Bottom-left notes: start just below where the moon stack ends
+    # Bottom-left notes: anchor from the bottom of the page
+    # Requirement: the notes block sits 2cm above the page bottom.
     if footer_left_notes:
-        row_step = ((icon_cm + icon_gap_y_cm) / fig_height_cm)
-        last_center_y = footer_y - max(0, (len(moon_paths) - 1)) * row_step
-        moon_stack_bottom_y = last_center_y - (icon_h / 2)
-        notes_top_gap_cm = 0.25
-        notes_top_y = moon_stack_bottom_y - (notes_top_gap_cm / fig_height_cm)
-
         fs_notes = 8
         fig_h_in_notes = fig.get_size_inches()[1]
         line_h_notes = ((fs_notes * 1.2) / 72.0) / fig_h_in_notes
 
+        notes_bottom_y = (FOOTER_BOTTOM_MARGIN_CM / fig_height_cm)
+        n_lines = len(footer_left_notes)
+
         for i, line in enumerate(footer_left_notes):
+            # Place lines upward so the bottom of the last line is exactly at notes_bottom_y.
+            y = notes_bottom_y + (n_lines - 1 - i) * line_h_notes
             fig.text(
                 footer_text_x,
-                max(0.01, notes_top_y - i * line_h_notes),
+                max(0.01, y),
                 line,
-                ha='left', va='top',
+                ha='left', va='bottom',
                 color='#222', fontsize=fs_notes, zorder=21,
             )
 
@@ -1015,7 +1178,7 @@ try:
             sun_x, yy,
             arrow_txt,
             ha='left', va='center',
-            color=color_txt, fontsize=9, zorder=21,
+            color=color_txt, fontsize=10, weight='bold', zorder=21,
         )
         sun_label = fig.text(
             sun_x + sun_marker_gap, yy,
@@ -1129,8 +1292,6 @@ except Exception:
     pass
 
 # Downward triangle and text for lowest tide
-footer_low_y = footer_y - (0.022)
-footer_row_gap = footer_y - footer_low_y
 fig.add_artist(
     plt.Line2D(
         [footer_marker_x], [footer_low_y],
@@ -1158,15 +1319,15 @@ if SHOW_PALOLO_FOOTER and (month == PALOLO_FOOTER_DATE.month):
             print(f"Warning: palolo icon not found at {PALOLO_ICON_PATH}")
         palolo_img = plt.imread(str(PALOLO_ICON_PATH))
 
-        palolo_icon_cm = 0.45
-        palolo_icon_w = palolo_icon_cm / fig_width_cm
-        palolo_icon_h = palolo_icon_cm / fig_height_cm
-
-        # Match the same vertical spacing as Highest -> Lowest tide rows
-        palolo_center_y_target = footer_low_y - footer_row_gap
-        palolo_bottom_min = 0.012
-        palolo_bottom = max(palolo_bottom_min, palolo_center_y_target - (palolo_icon_h / 2))
-        palolo_center_y = palolo_bottom + (palolo_icon_h / 2)
+        # (palolo_icon_w/palolo_icon_h/palolo_bottom/palolo_center_y already computed above)
+        if palolo_icon_w is None or palolo_icon_h is None or palolo_bottom is None or palolo_center_y is None:
+            palolo_icon_cm = 0.45
+            palolo_icon_w = palolo_icon_cm / fig_width_cm
+            palolo_icon_h = palolo_icon_cm / fig_height_cm
+            palolo_center_y_target = footer_low_y - footer_row_gap
+            palolo_bottom_min = 0.012
+            palolo_bottom = max(palolo_bottom_min, palolo_center_y_target - (palolo_icon_h / 2))
+            palolo_center_y = palolo_bottom + (palolo_icon_h / 2)
 
         # Center the icon on the same x as the triangle markers
         palolo_left = max(0.0, footer_marker_x - (palolo_icon_w / 2))
@@ -1193,7 +1354,13 @@ elif SHOW_PALOLO_FOOTER and (month != PALOLO_FOOTER_DATE.month):
         f"Note: SHOW_PALOLO_FOOTER is True, but calendar month={month} doesn't match PALOLO_FOOTER_DATE.month={PALOLO_FOOTER_DATE.month}"
     )
 
-# Save the figure as a .pdf file
-fig.savefig('tidal_calendar.pdf', format='pdf')
+# Save the figure as a .pdf file (single-page) or append to a multi-page PDF
+_pdf_pages = globals().get('_PDF_PAGES')
+if _pdf_pages is not None:
+    _pdf_pages.savefig(fig)
+else:
+    fig.savefig('tidal_calendar.pdf', format='pdf')
+
+plt.close(fig)
 
 #plt.show()
