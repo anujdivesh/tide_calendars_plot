@@ -79,10 +79,10 @@ if YEAR is not None and len(tide_points_year) < 100:
 
 header = ['Date', 'Time', 'Height (ft)']
 
-high_rows = [[dt.strftime('%d-%b'), dt.strftime('%I:%M %p'), f'{h:.2f}']
+high_rows = [[dt.strftime('%d-%b'), dt.strftime('%I:%M %p'), f'{h:.3f}']
              for dt, h, _ in high_tides]
 
-low_rows = [[dt.strftime('%d-%b'), dt.strftime('%I:%M %p'), f'{h:.2f}']
+low_rows = [[dt.strftime('%d-%b'), dt.strftime('%I:%M %p'), f'{h:.3f}']
             for dt, h, _ in low_tides]
 
 # Combine side by side

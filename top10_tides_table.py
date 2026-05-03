@@ -39,10 +39,10 @@ low_tides = sorted(tide_points_year, key=lambda x: x[1])[:10]
 
 header = ['Date', 'Time', 'Height (m)']
 
-high_rows = [[dt.strftime('%d-%b'), dt.strftime('%I:%M %p'), f'{h:.2f}']
+high_rows = [[dt.strftime('%d-%b'), dt.strftime('%I:%M %p'), f'{h:.3f}']
              for dt, h, _ in high_tides]
 
-low_rows = [[dt.strftime('%d-%b'), dt.strftime('%I:%M %p'), f'{h:.2f}']
+low_rows = [[dt.strftime('%d-%b'), dt.strftime('%I:%M %p'), f'{h:.3f}']
             for dt, h, _ in low_tides]
 
 # Combine side by side
