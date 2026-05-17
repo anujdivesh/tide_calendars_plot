@@ -409,8 +409,22 @@ _footer_notes_fs = 8
 _footer_moon_dir = Path(__file__).parent / 'moon_icons'
 if (not _footer_moon_dir.exists()) and (Path(__file__).parent.parent / 'moon_icons').exists():
     _footer_moon_dir = Path(__file__).parent.parent / 'moon_icons'
-_footer_moon_paths = sorted(_footer_moon_dir.glob('*.png'))
-_n_moon = max(1, len(_footer_moon_paths))
+_footer_png_files = list(_footer_moon_dir.glob('*.png'))
+_footer_phase_paths = {}
+for _png_file in _footer_png_files:
+    _filename = _png_file.stem.lower()
+    if 'last' in _filename:
+        _footer_phase_paths['last_quarter'] = _png_file
+    elif 'first' in _filename:
+        _footer_phase_paths['first_quarter'] = _png_file
+    elif 'full' in _filename:
+        _footer_phase_paths['full'] = _png_file
+    elif 'new' in _filename:
+        _footer_phase_paths['new'] = _png_file
+
+# Reserve space based on the *major* phases only (New/First/Full/Last), not
+# whatever other icons might live in the folder.
+_n_moon = max(1, len(_footer_phase_paths))
 
 _row_step_cm = _footer_moon_icon_cm + _footer_moon_gap_y_cm
 _moon_stack_depth_cm = (_n_moon - 1) * _row_step_cm + (_footer_moon_icon_cm / 2.0)
@@ -1087,18 +1101,33 @@ try:
     moon_dir = Path(__file__).parent / 'moon_icons'
     if (not moon_dir.exists()) and (Path(__file__).parent.parent / 'moon_icons').exists():
         moon_dir = Path(__file__).parent.parent / 'moon_icons'
-    moon_paths = sorted(moon_dir.glob('*.png'))
-    moon_labels = [
-        'First quarter',
-        'Full Moon',
-        'Last quarter',
-        'New Moon',
+    png_files = list(moon_dir.glob('*.png'))
+    phase_to_path = {}
+    for png_file in png_files:
+        filename = png_file.stem.lower()
+        if 'last' in filename:
+            phase_to_path['last_quarter'] = png_file
+        elif 'first' in filename:
+            phase_to_path['first_quarter'] = png_file
+        elif 'full' in filename:
+            phase_to_path['full'] = png_file
+        elif 'new' in filename:
+            phase_to_path['new'] = png_file
+
+    # Display order requirement:
+    # New Moon → First Quarter → Full Moon → Last Quarter
+    phase_order = [
+        ('new', 'New Moon'),
+        ('first_quarter', 'First Quarter'),
+        ('full', 'Full Moon'),
+        ('last_quarter', 'Last Quarter'),
     ]
+    legend_items = [(phase_to_path[k], label) for (k, label) in phase_order if k in phase_to_path]
 
     moon_label_artists = []
     moon_right_x = moon_x + icon_w
 
-    for i, icon_path in enumerate(moon_paths):
+    for i, (icon_path, label_txt) in enumerate(legend_items):
         yy = footer_y - i * ((icon_cm + icon_gap_y_cm) / fig_height_cm)
         icon_bottom = yy - icon_h / 2
 
@@ -1108,7 +1137,6 @@ try:
         icon_ax.set_axis_off()
 
         label_x = moon_x + icon_w + (0.18 / fig_width_cm)
-        label_txt = moon_labels[i % len(moon_labels)]
         moon_label = fig.text(
             label_x, yy,
             label_txt,
@@ -1205,7 +1233,7 @@ try:
     copyright_value = "2026, Pacific Community SPC"
     disclaimer_label = "Disclaimer"
     disclaimer_value = (
-        "These tide predictions are supplied in good faith and are belived to be correct. "
+        "These tide predictions are supplied in good faith and are believed to be correct. "
         "They are not necessarily related to a local hydrographic chart datum. "
         "\n"
         "\n"
